@@ -24,9 +24,12 @@
               源文件目录
               <span class="required">*</span>
             </label>
-            <div 
+            <div
               class="directory-selector"
-              :class="{ 'has-value': sourceDirectory, 'drag-over': isDragOverSource }"
+              :class="{
+                'has-value': sourceDirectory,
+                'drag-over': isDragOverSource,
+              }"
               @click="selectSourceDirectory"
               @dragover.prevent="handleDragOver('source')"
               @dragleave.prevent="handleDragLeave('source')"
@@ -59,9 +62,12 @@
               输出目录
               <span class="optional">(可选)</span>
             </label>
-            <div 
+            <div
               class="directory-selector optional"
-              :class="{ 'has-value': outputDirectory, 'drag-over': isDragOverOutput }"
+              :class="{
+                'has-value': outputDirectory,
+                'drag-over': isDragOverOutput,
+              }"
               @click="selectOutputDirectory"
               @dragover.prevent="handleDragOver('output')"
               @dragleave.prevent="handleDragLeave('output')"
@@ -84,7 +90,9 @@
                 <span class="empty-icon">📤</span>
                 <div class="empty-text">
                   <div class="empty-title">选择输出目录</div>
-                  <div class="empty-subtitle">不选择则在源目录内创建分类文件夹</div>
+                  <div class="empty-subtitle">
+                    不选择则在源目录内创建分类文件夹
+                  </div>
                 </div>
               </div>
             </div>
@@ -108,8 +116,8 @@
               <span class="label-icon">📁</span>
               未分类文件夹名称
             </label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               v-model="unclassifiedFolderName"
               class="option-input"
               placeholder="未分类文件"
@@ -118,23 +126,21 @@
 
           <div class="option-group">
             <label class="toggle-option">
-              <input 
-                type="checkbox" 
-                v-model="recursive"
-                class="toggle-input"
-              />
+              <input type="checkbox" v-model="recursive" class="toggle-input" />
               <span class="toggle-slider"></span>
               <div class="toggle-content">
                 <span class="toggle-title">递归处理子文件夹</span>
-                <span class="toggle-description">同时整理源目录下的所有子文件夹</span>
+                <span class="toggle-description"
+                  >同时整理源目录下的所有子文件夹</span
+                >
               </div>
             </label>
           </div>
 
           <div class="option-group">
             <label class="toggle-option">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 v-model="createBackup"
                 class="toggle-input"
               />
@@ -160,8 +166,8 @@
 
         <div class="card-content">
           <div class="preset-list">
-            <div 
-              v-for="preset in presets" 
+            <div
+              v-for="preset in presets"
               :key="preset.id"
               class="preset-item"
               @click="applyPreset(preset)"
@@ -183,7 +189,11 @@
         <span class="btn-icon">🔄</span>
         重置配置
       </button>
-      <button class="action-btn primary" @click="saveConfig" :disabled="!isConfigValid">
+      <button
+        class="action-btn primary"
+        @click="saveConfig"
+        :disabled="!isConfigValid"
+      >
         <span class="btn-icon">💾</span>
         保存配置
       </button>
@@ -192,7 +202,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, defineProps, defineEmits } from 'vue';
+import { ref, computed, defineProps, defineEmits } from "vue";
 
 const props = defineProps<{
   sourceDirectory?: string;
@@ -202,17 +212,19 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'update:sourceDirectory', value: string): void;
-  (e: 'update:outputDirectory', value: string): void;
-  (e: 'update:unclassifiedFolderName', value: string): void;
-  (e: 'update:recursive', value: boolean): void;
-  (e: 'config-saved', config: any): void;
+  (e: "update:sourceDirectory", value: string): void;
+  (e: "update:outputDirectory", value: string): void;
+  (e: "update:unclassifiedFolderName", value: string): void;
+  (e: "update:recursive", value: boolean): void;
+  (e: "config-saved", config: any): void;
 }>();
 
 // 本地状态
-const sourceDirectory = ref(props.sourceDirectory || '');
-const outputDirectory = ref(props.outputDirectory || '');
-const unclassifiedFolderName = ref(props.unclassifiedFolderName || '未分类文件');
+const sourceDirectory = ref(props.sourceDirectory || "");
+const outputDirectory = ref(props.outputDirectory || "");
+const unclassifiedFolderName = ref(
+  props.unclassifiedFolderName || "未分类文件"
+);
 const recursive = ref(props.recursive ?? true);
 const createBackup = ref(true);
 
@@ -222,54 +234,54 @@ const isDragOverOutput = ref(false);
 
 // 计算属性
 const sourceDirectoryMeta = computed(() => {
-  if (!sourceDirectory.value) return '';
-  return '点击更改目录';
+  if (!sourceDirectory.value) return "";
+  return "点击更改目录";
 });
 
 const outputDirectoryMeta = computed(() => {
-  if (!outputDirectory.value) return '';
-  return '点击更改目录';
+  if (!outputDirectory.value) return "";
+  return "点击更改目录";
 });
 
 const isConfigValid = computed(() => {
-  return sourceDirectory.value.trim() !== '';
+  return sourceDirectory.value.trim() !== "";
 });
 
 // 预设配置
 const presets = [
   {
-    id: 'documents',
-    name: '文档整理',
-    icon: '📄',
-    description: '适合整理办公文档和资料',
+    id: "documents",
+    name: "文档整理",
+    icon: "📄",
+    description: "适合整理办公文档和资料",
     config: {
-      unclassifiedFolderName: '其他文档',
+      unclassifiedFolderName: "其他文档",
       recursive: true,
-      createBackup: true
-    }
+      createBackup: true,
+    },
   },
   {
-    id: 'media',
-    name: '媒体文件',
-    icon: '🎬',
-    description: '适合整理图片、视频等媒体文件',
+    id: "media",
+    name: "媒体文件",
+    icon: "🎬",
+    description: "适合整理图片、视频等媒体文件",
     config: {
-      unclassifiedFolderName: '其他媒体',
+      unclassifiedFolderName: "其他媒体",
       recursive: false,
-      createBackup: false
-    }
+      createBackup: false,
+    },
   },
   {
-    id: 'downloads',
-    name: '下载文件',
-    icon: '⬇️',
-    description: '适合整理下载文件夹',
+    id: "downloads",
+    name: "下载文件",
+    icon: "⬇️",
+    description: "适合整理下载文件夹",
     config: {
-      unclassifiedFolderName: '未分类下载',
+      unclassifiedFolderName: "未分类下载",
       recursive: false,
-      createBackup: true
-    }
-  }
+      createBackup: true,
+    },
+  },
 ];
 
 // 方法
@@ -278,11 +290,13 @@ const selectSourceDirectory = async () => {
     // @ts-ignore
     const paths = await window.electronAPI.selectDirectory();
     if (paths && paths.length > 0) {
-      sourceDirectory.value = paths;
-      emit('update:sourceDirectory', paths);
+      // 只取第一个路径，确保显示为字符串而不是数组
+      const selectedPath = paths[0];
+      sourceDirectory.value = selectedPath;
+      emit("update:sourceDirectory", selectedPath);
     }
   } catch (error) {
-    console.error('选择源目录失败:', error);
+    console.error("选择源目录失败:", error);
   }
 };
 
@@ -291,48 +305,50 @@ const selectOutputDirectory = async () => {
     // @ts-ignore
     const paths = await window.electronAPI.selectDirectory();
     if (paths && paths.length > 0) {
-      outputDirectory.value = paths;
-      emit('update:outputDirectory', paths);
+      // 只取第一个路径，确保显示为字符串而不是数组
+      const selectedPath = paths[0];
+      outputDirectory.value = selectedPath;
+      emit("update:outputDirectory", selectedPath);
     }
   } catch (error) {
-    console.error('选择输出目录失败:', error);
+    console.error("选择输出目录失败:", error);
   }
 };
 
 const clearOutputDirectory = () => {
-  outputDirectory.value = '';
-  emit('update:outputDirectory', '');
+  outputDirectory.value = "";
+  emit("update:outputDirectory", "");
 };
 
-const handleDragOver = (type: 'source' | 'output') => {
-  if (type === 'source') {
+const handleDragOver = (type: "source" | "output") => {
+  if (type === "source") {
     isDragOverSource.value = true;
   } else {
     isDragOverOutput.value = true;
   }
 };
 
-const handleDragLeave = (type: 'source' | 'output') => {
-  if (type === 'source') {
+const handleDragLeave = (type: "source" | "output") => {
+  if (type === "source") {
     isDragOverSource.value = false;
   } else {
     isDragOverOutput.value = false;
   }
 };
 
-const handleDrop = (type: 'source' | 'output', event: DragEvent) => {
-  if (type === 'source') {
+const handleDrop = (type: "source" | "output", event: DragEvent) => {
+  if (type === "source") {
     isDragOverSource.value = false;
   } else {
     isDragOverOutput.value = false;
   }
-  
+
   // 处理拖拽的文件夹
   const files = event.dataTransfer?.files;
   if (files && files.length > 0) {
     const file = files[0];
     // 注意：在Electron中，拖拽文件夹的处理可能需要特殊处理
-    console.log('拖拽文件:', file);
+    console.log("拖拽文件:", file);
   }
 };
 
@@ -340,22 +356,22 @@ const applyPreset = (preset: any) => {
   unclassifiedFolderName.value = preset.config.unclassifiedFolderName;
   recursive.value = preset.config.recursive;
   createBackup.value = preset.config.createBackup;
-  
-  emit('update:unclassifiedFolderName', unclassifiedFolderName.value);
-  emit('update:recursive', recursive.value);
+
+  emit("update:unclassifiedFolderName", unclassifiedFolderName.value);
+  emit("update:recursive", recursive.value);
 };
 
 const resetConfig = () => {
-  sourceDirectory.value = '';
-  outputDirectory.value = '';
-  unclassifiedFolderName.value = '未分类文件';
+  sourceDirectory.value = "";
+  outputDirectory.value = "";
+  unclassifiedFolderName.value = "未分类文件";
   recursive.value = true;
   createBackup.value = true;
-  
-  emit('update:sourceDirectory', '');
-  emit('update:outputDirectory', '');
-  emit('update:unclassifiedFolderName', '未分类文件');
-  emit('update:recursive', true);
+
+  emit("update:sourceDirectory", "");
+  emit("update:outputDirectory", "");
+  emit("update:unclassifiedFolderName", "未分类文件");
+  emit("update:recursive", true);
 };
 
 const saveConfig = () => {
@@ -364,10 +380,10 @@ const saveConfig = () => {
     outputDirectory: outputDirectory.value,
     unclassifiedFolderName: unclassifiedFolderName.value,
     recursive: recursive.value,
-    createBackup: createBackup.value
+    createBackup: createBackup.value,
   };
-  
-  emit('config-saved', config);
+
+  emit("config-saved", config);
 };
 </script>
 
@@ -638,7 +654,7 @@ const saveConfig = () => {
 }
 
 .toggle-slider::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 2px;
   left: 2px;

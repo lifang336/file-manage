@@ -39,7 +39,9 @@
           class="category-item"
         >
           <span class="category-name">{{ category }}</span>
-          <button @click="removeCategory(index)" class="remove-btn">删除</button>
+          <button @click="removeCategory(index)" class="remove-btn">
+            删除
+          </button>
         </div>
       </div>
 
@@ -63,7 +65,10 @@
       <p v-if="!props.sourceDirectoryPath" class="info-text error-text">
         请先选择要整理的文件目录。
       </p>
-      <p v-if="categoryNames.length === 0 && props.sourceDirectoryPath" class="info-text">
+      <p
+        v-if="categoryNames.length === 0 && props.sourceDirectoryPath"
+        class="info-text"
+      >
         请先添加分类名称。
       </p>
       <button
@@ -144,25 +149,31 @@ const handleStartManualOrganization = () => {
   padding: 10px;
 }
 
+/* 页面标题样式 */
 .page-header {
-  margin-bottom: 30px;
   text-align: center;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  border-radius: 12px;
+  color: white;
+  box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
 }
 
 .page-header h2 {
   margin: 0 0 10px 0;
-  color: #2c3e50;
   font-size: 28px;
   font-weight: 600;
-  border: none;
-  padding: 0;
+  letter-spacing: -0.5px;
 }
 
 .page-description {
-  color: #6c757d;
-  font-size: 16px;
   margin: 0;
+  font-size: 16px;
+  opacity: 0.9;
   line-height: 1.5;
+  max-width: 600px;
+  margin: 0 auto;
 }
 
 .section-box {
@@ -267,6 +278,7 @@ h3 {
   padding: 10px;
   border: 1px solid #ced4da;
   border-radius: 4px;
+  box-sizing: border-box;
   font-size: 14px;
 }
 
@@ -290,7 +302,7 @@ h3 {
 }
 
 .start-button {
-  background-color: #007bff;
+  background-color: #28a745;
   color: white;
   border: none;
   padding: 10px 18px;
@@ -306,7 +318,7 @@ h3 {
 }
 
 .start-button:hover:not(:disabled) {
-  background-color: #0056b3;
+  background-color: #218838;
 }
 
 .progress-log .progress-bar {

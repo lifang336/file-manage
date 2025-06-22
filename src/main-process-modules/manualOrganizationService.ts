@@ -5,6 +5,7 @@ import * as path from "path";
 import { ManualOrganizationOptions, ClassificationRule } from "./interfaces"; // 从共享接口模块导入
 import { getShouldSaveDirectoryStructureLog } from "./ipcGeneralHandlers"; // 新增：导入获取日志设置的函数
 import { recordOriginalDirectoryStructure } from "./directoryLogger"; // 新增：导入目录日志记录函数
+import { shouldIgnoreSystemFile } from "./systemFilesFilter";
 
 /**
  * @function registerManualOrganizationHandler
@@ -20,7 +21,6 @@ export function registerManualOrganizationHandler(): void {
         classificationRules,
         unclassifiedFolderName,
         recursive,
-        isDryRun = false,
       } = options;
 
       const sender = event.sender;
@@ -28,23 +28,13 @@ export function registerManualOrganizationHandler(): void {
       // 发送日志到渲染进程的辅助函数
       const sendLog = (
         message: string,
-        type: "info" | "error" | "success" | "dryRun" = "info"
+        type: "info" | "error" | "success" = "info"
       ) => {
-        const logMessage =
-          isDryRun && type !== "error" && type !== "dryRun"
-            ? `[模拟] ${message}`
-            : message;
-        const logLevel = type === "dryRun" ? "info" : type;
-        const finalMessage =
-          type === "dryRun" ? `[模拟] ${message}` : logMessage;
-
-        console.log(
-          `[ManualOrgService Log] ${logLevel.toUpperCase()}: ${finalMessage}`
-        );
+        console.log(`[ManualOrgService Log] ${type.toUpperCase()}: ${message}`);
         sender.send("organization-progress", {
           type: "log",
-          message: finalMessage,
-          level: logLevel,
+          message: message,
+          level: type,
         });
       };
 
@@ -63,26 +53,18 @@ export function registerManualOrganizationHandler(): void {
         });
       };
 
-      sendLog(
-        `${
-          isDryRun ? "开始模拟运行" : "开始整理文件"
-        }，源目录: ${sourceDirectoryPath}`
-      );
+      sendLog(`开始整理文件，源目录: ${sourceDirectoryPath}`);
       if (outputDirectoryPath) {
         sendLog(`输出目录: ${outputDirectoryPath}`);
       } else {
         sendLog("将在源目录内创建分类文件夹。");
       }
       sendLog(
-        `手动规则数量: ${
-          classificationRules.length
-        }, 未分类文件夹: ${unclassifiedFolderName}, 递归: ${recursive}, 模拟运行: ${
-          isDryRun ? "是" : "否"
-        }`
+        `手动规则数量: ${classificationRules.length}, 未分类文件夹: ${unclassifiedFolderName}, 递归: ${recursive}`
       );
 
       // 新增：在实际操作前记录原始目录结构
-      if (!isDryRun && getShouldSaveDirectoryStructureLog()) {
+      if (getShouldSaveDirectoryStructureLog()) {
         try {
           sendLog("正在记录原始目录结构...", "info");
           const logFilePath = await recordOriginalDirectoryStructure(
@@ -107,12 +89,8 @@ export function registerManualOrganizationHandler(): void {
       if (outputDirectoryPath) {
         try {
           if (!fs.existsSync(outputDirectoryPath)) {
-            if (isDryRun) {
-              sendLog(`计划创建输出目录: ${outputDirectoryPath}`, "dryRun");
-            } else {
-              fs.mkdirSync(outputDirectoryPath, { recursive: true });
-              sendLog(`已创建输出目录: ${outputDirectoryPath}`, "success");
-            }
+            fs.mkdirSync(outputDirectoryPath, { recursive: true });
+            sendLog(`已创建输出目录: ${outputDirectoryPath}`, "success");
           }
         } catch (error: any) {
           sendLog(`创建输出目录失败: ${error.message}`, "error");
@@ -122,13 +100,6 @@ export function registerManualOrganizationHandler(): void {
           };
         }
       }
-
-      const systemFilesToIgnore = [
-        ".ds_store",
-        "thumbs.db",
-        "desktop.ini",
-        ".file-organizer-logs",
-      ]; // 将日志文件夹也加入忽略列表
 
       async function organizeDirectory(
         currentSourceDir: string,
@@ -144,7 +115,7 @@ export function registerManualOrganizationHandler(): void {
 
             // 检查是否应该忽略该条目 (系统文件或日志文件夹本身)
             if (
-              systemFilesToIgnore.includes(entryName.toLowerCase()) ||
+              shouldIgnoreSystemFile(entryName) ||
               (entry.isDirectory() &&
                 entryName === ".file-organizer-logs" &&
                 (outputDirectoryPath
@@ -228,12 +199,8 @@ export function registerManualOrganizationHandler(): void {
 
               try {
                 if (!fs.existsSync(targetDir)) {
-                  if (isDryRun) {
-                    sendLog(`计划创建文件夹: ${targetDir}`, "dryRun");
-                  } else {
-                    fs.mkdirSync(targetDir, { recursive: true });
-                    sendLog(`已创建文件夹: ${targetDir}`, "success");
-                  }
+                  fs.mkdirSync(targetDir, { recursive: true });
+                  sendLog(`已创建文件夹: ${targetDir}`, "success");
                 }
               } catch (mkdirError: any) {
                 sendLog(
@@ -251,8 +218,7 @@ export function registerManualOrganizationHandler(): void {
 
               const checkFileExists = (filePathToCheck: string) => {
                 // 如果源路径和目标路径相同（例如，文件已在目标位置且未重命名），则不应视为“存在冲突”
-                if (fullSourcePath === filePathToCheck && !isDryRun)
-                  return false;
+                if (fullSourcePath === filePathToCheck) return false;
                 return fs.existsSync(filePathToCheck);
               };
 
@@ -265,53 +231,36 @@ export function registerManualOrganizationHandler(): void {
                 isRenamed = true;
               }
 
-              if (isDryRun) {
+              // 再次检查目标路径是否与源路径相同，避免不必要的移动
+              if (fullSourcePath === targetFilePath) {
+                sendLog(
+                  `文件 "${entryName}" 已在目标位置 "${targetFilePath}"，无需移动。`,
+                  "info"
+                );
+                sendFileProcessedUpdate(); // 仍然算作已处理
+                continue;
+              }
+              try {
+                fs.renameSync(fullSourcePath, targetFilePath);
                 if (isRenamed) {
                   sendLog(
-                    `文件 "${entryName}" 将被移动并重命名为 "${path.basename(
+                    `已移动文件: "${entryName}" 并重命名为 "${path.basename(
                       targetFilePath
                     )}" 到文件夹 "${targetDir}"`,
-                    "dryRun"
+                    "success"
                   );
                 } else {
                   sendLog(
-                    `文件 "${entryName}" 将被移动到 "${targetFilePath}"`,
-                    "dryRun"
+                    `已移动文件: "${entryName}" 到 "${targetFilePath}"`,
+                    "success"
                   );
                 }
                 sendFileProcessedUpdate();
-              } else {
-                // 再次检查目标路径是否与源路径相同，避免不必要的移动
-                if (fullSourcePath === targetFilePath) {
-                  sendLog(
-                    `文件 "${entryName}" 已在目标位置 "${targetFilePath}"，无需移动。`,
-                    "info"
-                  );
-                  sendFileProcessedUpdate(); // 仍然算作已处理
-                  continue;
-                }
-                try {
-                  fs.renameSync(fullSourcePath, targetFilePath);
-                  if (isRenamed) {
-                    sendLog(
-                      `已移动文件: "${entryName}" 并重命名为 "${path.basename(
-                        targetFilePath
-                      )}" 到文件夹 "${targetDir}"`,
-                      "success"
-                    );
-                  } else {
-                    sendLog(
-                      `已移动文件: "${entryName}" 到 "${targetFilePath}"`,
-                      "success"
-                    );
-                  }
-                  sendFileProcessedUpdate();
-                } catch (moveError: any) {
-                  sendLog(
-                    `移动文件 "${entryName}" 失败: ${moveError.message}`,
-                    "error"
-                  );
-                }
+              } catch (moveError: any) {
+                sendLog(
+                  `移动文件 "${entryName}" 失败: ${moveError.message}`,
+                  "error"
+                );
               }
             }
           }
@@ -324,30 +273,20 @@ export function registerManualOrganizationHandler(): void {
       }
 
       try {
-        sendStatus(isDryRun ? "正在模拟运行..." : "正在整理文件...");
+        sendStatus("正在整理文件...");
         await organizeDirectory(sourceDirectoryPath);
-        sendStatus(isDryRun ? "模拟运行完成！" : "整理完成！");
-        sendLog(
-          isDryRun ? "所有操作模拟完毕。" : "所有文件处理完毕。",
-          isDryRun ? "dryRun" : "success"
-        );
+        sendStatus("整理完成！");
+        sendLog("所有文件处理完毕。", "success");
         return {
           success: true,
-          message: isDryRun ? "模拟运行成功完成。" : "文件整理成功完成。",
+          message: "文件整理成功完成。",
         };
       } catch (error: any) {
-        sendLog(
-          `${isDryRun ? "模拟运行" : "文件整理"}过程中发生严重错误: ${
-            error.message
-          }`,
-          "error"
-        );
-        sendStatus(isDryRun ? "模拟运行失败。" : "整理失败。");
+        sendLog(`文件整理过程中发生严重错误: ${error.message}`, "error");
+        sendStatus("整理失败。");
         return {
           success: false,
-          message: `${isDryRun ? "模拟运行" : "文件整理"}失败: ${
-            error.message
-          }`,
+          message: `文件整理失败: ${error.message}`,
         };
       }
     }

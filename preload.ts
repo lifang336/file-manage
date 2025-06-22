@@ -87,6 +87,40 @@ contextBridge.exposeInMainWorld("electronAPI", {
     }
   },
 
+  // 新增：获取快速分类预览
+  getQuickOrganizationPreview: async (options: any): Promise<any> => {
+    try {
+      const result = await ipcRenderer.invoke(
+        "quick-organization-preview",
+        options
+      );
+      return result;
+    } catch (error) {
+      console.error(
+        "在 preload 中调用 getQuickOrganizationPreview 时出错:",
+        error
+      );
+      throw error;
+    }
+  },
+
+  // 新增：执行快速分类
+  executeQuickOrganization: async (options: any): Promise<any> => {
+    try {
+      const result = await ipcRenderer.invoke(
+        "quick-organization-execute",
+        options
+      );
+      return result;
+    } catch (error) {
+      console.error(
+        "在 preload 中调用 executeQuickOrganization 时出错:",
+        error
+      );
+      throw error;
+    }
+  },
+
   // 新增：设置是否保存目录结构日志
   setSaveDirectoryStructureLog: async (
     enabled: boolean
@@ -144,6 +178,37 @@ contextBridge.exposeInMainWorld("electronAPI", {
       return config;
     } catch (error) {
       console.error("在 preload 中调用 getLLMConfig 时出错:", error);
+      throw error;
+    }
+  },
+
+  // 新增：获取LLM文件整理预览
+  getLLMOrganizationPreview: async (options: any): Promise<any> => {
+    try {
+      const result = await ipcRenderer.invoke(
+        "llm-organization-preview",
+        options
+      );
+      return result;
+    } catch (error) {
+      console.error(
+        "在 preload 中调用 getLLMOrganizationPreview 时出错:",
+        error
+      );
+      throw error;
+    }
+  },
+
+  // 新增：执行LLM文件整理
+  executeLLMOrganization: async (options: any): Promise<any> => {
+    try {
+      const result = await ipcRenderer.invoke(
+        "llm-organization-execute",
+        options
+      );
+      return result;
+    } catch (error) {
+      console.error("在 preload 中调用 executeLLMOrganization 时出错:", error);
       throw error;
     }
   },

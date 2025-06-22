@@ -1,6 +1,7 @@
 // src/main-process-modules/directoryLogger.ts
 import * as fs from "fs-extra"; // 使用 fs-extra 替代 fs，以便使用 ensureDir 等便捷功能
 import * as path from "path";
+import { shouldIgnoreSystemFile } from "./systemFilesFilter";
 
 const LOG_SUBFOLDER_NAME = ".file-organizer-logs";
 
@@ -20,8 +21,8 @@ async function scanDirectoryToMarkdown(
   try {
     const items = await fs.readdir(directoryPath);
     for (const item of items) {
-      // 忽略日志文件夹本身，避免无限递归或记录自身
-      if (item === LOG_SUBFOLDER_NAME) {
+      // 检查是否应该忽略该条目（系统文件或文件夹）
+      if (shouldIgnoreSystemFile(item)) {
         continue;
       }
       const itemPath = path.join(directoryPath, item);

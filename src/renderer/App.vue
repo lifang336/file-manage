@@ -33,7 +33,7 @@
           @update:llm-api-key="llmApiKey = $event"
           @get-llm-suggestions-app="handleGetLLMSuggestions"
           @categories-confirmed-app="handleCategoriesConfirmed"
-          @start-llm-organization-app="() => startLLMOrganization(false)"
+          @start-llm-organization-app="startLLMOrganization"
         />
 
         <!-- 设置 -->
@@ -54,11 +54,33 @@
       :show-progress="showProgress"
       :progress="loadingProgress"
     />
+
+    <!-- 快速分类预览遮罩 -->
+    <div v-if="showQuickPreview" class="preview-overlay">
+      <QuickOrganizationPreview
+        :preview-data="quickOrganizationPreview"
+        :source-directory-path="sourceDirectoryPath || ''"
+        :unclassified-folder-name="unclassifiedFolderName"
+        @confirm="handleQuickPreviewConfirm"
+        @cancel="handleQuickPreviewCancel"
+      />
+    </div>
+
+    <!-- LLM整理预览遮罩 -->
+    <div v-if="showLLMPreview" class="preview-overlay">
+      <LLMOrganizationPreview
+        :preview-data="llmOrganizationPreview"
+        :source-directory-path="sourceDirectoryPath || ''"
+        :unclassified-folder-name="unclassifiedFolderName"
+        @confirm="handleLLMPreviewConfirm"
+        @cancel="handleLLMPreviewCancel"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, provide } from "vue";
+import { ref, onMounted, onUnmounted, provide } from "vue";
 
 // 导入组件
 import ModernSidebar from "./components/ModernSidebar.vue";
@@ -66,6 +88,8 @@ import ManualModeView from "./views/ManualModeView.vue";
 import LLMModeView from "./views/LLMModeView.vue";
 import SettingsView from "./views/SettingsView.vue";
 import LoadingSpinner from "./components/LoadingSpinner.vue";
+import QuickOrganizationPreview from "./components/QuickOrganizationPreview.vue";
+import LLMOrganizationPreview from "./components/LLMOrganizationPreview.vue";
 
 // 当前活动的视图
 const currentView = ref<string>("manual");
@@ -85,30 +109,15 @@ const handleNavigate = (viewId: string) => {
 // 这些状态将部分保留在 App.vue 作为全局状态，或通过 props/emits 与子组件交互
 // 或者通过 provide/inject 共享
 
+// 导入共享接口
+import type { LLMOrganizationOptions } from "../main-process-modules/interfaces";
+
 // 定义 LLM 配置数据的接口 (与 LLMConfig.vue 中 emit 的类型一致)
 interface LLMConfigData {
   apiKey: string; // 这个 apiKey 是从 LLMConfig 组件内部发出的，现在需要从 SettingsView 获取
   classificationFocus?: string;
   numberOfCategories?: number;
   maxSamples?: number;
-}
-
-// 定义 LLM 单个文件整理的选项接口 (将传递给主进程)
-interface LLMOrganizationOptions {
-  sourceDirectoryPath: string;
-  outputDirectoryPath: string | null;
-  confirmedCategories: string[];
-  apiKey: string; // LLM 调用需要
-  unclassifiedFolderName: string;
-  recursive: boolean;
-  isDryRun: boolean;
-}
-
-// 定义分类规则的接口
-interface ClassificationRule {
-  categoryName: string;
-  matchType: "extension" | "keyword";
-  matchValue: string;
 }
 
 // 全局状态
@@ -143,22 +152,32 @@ const handleApiKeyUpdated = (newApiKey: string) => {
   organizationLog.value.unshift(`[INFO] App.vue: API Key 已更新。`);
 };
 
-// 监听 API Key 变化，尝试从主进程获取初始值
-onMounted(async () => {
+// 从配置文件加载完整配置
+const loadAppConfig = async () => {
   try {
     // @ts-ignore
-    const storedApiKey = await window.electronAPI.getApiKey();
-    if (storedApiKey) {
-      llmApiKey.value = storedApiKey;
+    const storedLLMConfig = await window.electronAPI.getLLMConfig();
+    if (storedLLMConfig) {
+      if (storedLLMConfig.apiKey) {
+        llmApiKey.value = storedLLMConfig.apiKey;
+        organizationLog.value.unshift(
+          "[INFO] App.vue: 成功从配置文件恢复 API Key。"
+        );
+      }
       organizationLog.value.unshift(
-        "[INFO] App.vue: 成功从主进程恢复 API Key。"
+        `[INFO] App.vue: LLM配置已加载 - 模型: ${storedLLMConfig.model}, 基础URL: ${storedLLMConfig.baseUrl}`
       );
     }
   } catch (error) {
     organizationLog.value.unshift(
-      "[WARN] App.vue: 无法从主进程恢复 API Key (可能尚未设置)。"
+      "[WARN] App.vue: 无法从配置文件恢复 LLM 配置 (可能尚未设置)。"
     );
   }
+};
+
+// 应用启动时加载配置
+onMounted(async () => {
+  await loadAppConfig();
 });
 
 // 目录选择 (全局)
@@ -167,7 +186,8 @@ const handleSelectSourceDirectory = async () => {
     // @ts-ignore
     const paths = await window.electronAPI.selectDirectory();
     if (paths && paths.length > 0) {
-      sourceDirectoryPath.value = paths;
+      // 只取第一个路径，确保显示为字符串而不是数组
+      sourceDirectoryPath.value = paths[0];
       organizationLog.value.unshift(
         `[INFO] 已选择源目录: ${sourceDirectoryPath.value}`
       );
@@ -182,7 +202,15 @@ const handleSelectSourceDirectory = async () => {
   }
 };
 
-// 快速分类方法
+// 快速分类预览结果存储
+const quickOrganizationPreview = ref<any>(null);
+const showQuickPreview = ref(false);
+
+// LLM整理预览结果存储
+const llmOrganizationPreview = ref<any>(null);
+const showLLMPreview = ref(false);
+
+// 快速分类方法 - 第一步：生成预览
 const handleStartQuickOrganization = async (categories: string[]) => {
   if (!sourceDirectoryPath.value) {
     alert("请先选择源文件目录！");
@@ -195,24 +223,173 @@ const handleStartQuickOrganization = async (categories: string[]) => {
     return;
   }
 
-  organizationProgress.value = "快速分类准备中...";
-  organizationLog.value.unshift("[INFO] 开始快速分类过程...");
+  organizationProgress.value = "正在生成快速分类预览...";
+  organizationLog.value.unshift("[INFO] 开始生成快速分类预览...");
   organizationLog.value.unshift(`[INFO] 源目录: ${sourceDirectoryPath.value}`);
   organizationLog.value.unshift(`[INFO] 分类名称: ${categories.join(", ")}`);
 
+  // 确保所有数据都是可序列化的
+  const options = {
+    sourceDirectoryPath: sourceDirectoryPath.value!,
+    categories: [...categories], // 创建新数组避免引用问题
+    unclassifiedFolderName: unclassifiedFolderName.value,
+    recursive: recursive.value,
+  };
+
   try {
     // @ts-ignore
-    await window.electronAPI.startQuickOrganization({
-      sourceDirectoryPath: sourceDirectoryPath.value,
-      categories: categories,
-      unclassifiedFolderName: unclassifiedFolderName.value,
-      recursive: recursive.value,
-    });
+    const previewResult = await window.electronAPI.getQuickOrganizationPreview(
+      options
+    );
+
+    if (previewResult.success) {
+      quickOrganizationPreview.value = previewResult;
+      organizationLog.value.unshift(
+        `[SUCCESS] 快速分类预览生成成功，共 ${previewResult.totalFiles} 个文件`
+      );
+      organizationProgress.value = `快速分类预览生成完成 - 共 ${previewResult.totalFiles} 个文件`;
+
+      // 显示分类统计
+      Object.entries(previewResult.categorySummary).forEach(
+        ([category, count]) => {
+          if ((count as number) > 0) {
+            organizationLog.value.unshift(
+              `[INFO] ${category}: ${count} 个文件`
+            );
+          }
+        }
+      );
+
+      // 显示预览界面
+      showQuickPreview.value = true;
+    } else {
+      organizationLog.value.unshift(
+        `[ERROR] 快速分类预览生成失败: ${previewResult.message}`
+      );
+      organizationProgress.value = `快速分类预览失败: ${previewResult.message}`;
+    }
   } catch (error: any) {
     organizationLog.value.unshift(
-      `[ERROR] 快速分类启动失败: ${error.message || error}`
+      `[ERROR] 快速分类预览生成失败: ${error.message || error}`
     );
-    organizationProgress.value = `快速分类启动失败: ${error.message || error}`;
+    organizationProgress.value = `快速分类预览失败: ${error.message || error}`;
+  }
+};
+
+// 快速分类方法 - 第二步：执行分类
+const executeQuickOrganization = async () => {
+  if (!quickOrganizationPreview.value) {
+    organizationLog.value.unshift("[ERROR] 没有可执行的快速分类预览");
+    return;
+  }
+
+  organizationProgress.value = "正在执行快速分类...";
+  organizationLog.value.unshift("[INFO] 开始执行快速分类...");
+
+  // 确保所有数据都是可序列化的，创建纯净的数据副本
+  const options = {
+    sourceDirectoryPath: sourceDirectoryPath.value!,
+    classifications: quickOrganizationPreview.value.classifications.map(
+      (item: any) => ({
+        filePath: item.filePath,
+        fileName: item.fileName,
+        relativePath: item.relativePath,
+        assignedCategory: item.assignedCategory,
+        targetPath: item.targetPath,
+      })
+    ),
+  };
+
+  try {
+    // @ts-ignore
+    const result = await window.electronAPI.executeQuickOrganization(options);
+
+    if (result.success) {
+      organizationLog.value.unshift(`[SUCCESS] ${result.message}`);
+      organizationProgress.value = result.message;
+    } else {
+      organizationLog.value.unshift(`[ERROR] ${result.message}`);
+      organizationProgress.value = result.message;
+    }
+
+    // 清除预览数据
+    quickOrganizationPreview.value = null;
+  } catch (error: any) {
+    organizationLog.value.unshift(
+      `[ERROR] 快速分类执行失败: ${error.message || error}`
+    );
+    organizationProgress.value = `快速分类执行失败: ${error.message || error}`;
+  }
+};
+
+// 处理快速分类预览确认
+const handleQuickPreviewConfirm = async () => {
+  showQuickPreview.value = false;
+  await executeQuickOrganization();
+};
+
+// 处理快速分类预览取消
+const handleQuickPreviewCancel = () => {
+  showQuickPreview.value = false;
+  quickOrganizationPreview.value = null;
+  organizationLog.value.unshift("[INFO] 用户取消了快速分类执行");
+  organizationProgress.value = "快速分类已取消";
+};
+
+// 处理LLM整理预览确认
+const handleLLMPreviewConfirm = async () => {
+  showLLMPreview.value = false;
+  await executeLLMOrganization();
+};
+
+// 处理LLM整理预览取消
+const handleLLMPreviewCancel = () => {
+  showLLMPreview.value = false;
+  llmOrganizationPreview.value = null;
+  organizationLog.value.unshift("[INFO] 用户取消了LLM整理执行");
+  organizationProgress.value = "LLM整理已取消";
+};
+
+// 执行LLM整理
+const executeLLMOrganization = async () => {
+  if (!llmOrganizationPreview.value) {
+    organizationLog.value.unshift("[ERROR] 没有可执行的LLM整理预览数据");
+    return;
+  }
+
+  organizationProgress.value = "正在执行LLM文件整理...";
+  organizationLog.value.unshift("[INFO] 开始执行LLM文件整理...");
+  organizationLog.value.unshift(
+    `[INFO] 将处理 ${llmOrganizationPreview.value.totalFiles} 个文件`
+  );
+
+  const options = {
+    sourceDirectoryPath: sourceDirectoryPath.value!,
+    outputDirectoryPath: llmOrganizationPreview.value.outputDirectoryPath,
+    classifications: llmOrganizationPreview.value.classifications,
+  };
+
+  try {
+    // @ts-ignore
+    const result = await window.electronAPI.executeLLMOrganization(options);
+
+    if (result.success) {
+      organizationLog.value.unshift(`[SUCCESS] ${result.message}`);
+      organizationProgress.value = result.message;
+
+      // 清理预览数据
+      llmOrganizationPreview.value = null;
+    } else {
+      organizationLog.value.unshift(
+        `[ERROR] LLM整理执行失败: ${result.message}`
+      );
+      organizationProgress.value = `LLM整理执行失败: ${result.message}`;
+    }
+  } catch (error: any) {
+    organizationLog.value.unshift(
+      `[ERROR] LLM整理执行过程中发生错误: ${error.message || error}`
+    );
+    organizationProgress.value = `LLM整理执行失败: ${error.message || error}`;
   }
 };
 
@@ -283,73 +460,87 @@ const handleCategoriesConfirmed = (categories: string[]) => {
   );
 };
 
-const startLLMOrganization = async (isDryRun: boolean) => {
+const startLLMOrganization = async () => {
   if (!sourceDirectoryPath.value) {
     alert("请先选择源文件目录！");
-    organizationLog.value.unshift(
-      `[ERROR] LLM ${isDryRun ? "模拟运行" : "整理"}失败：未选择源文件目录。`
-    );
+    organizationLog.value.unshift(`[ERROR] LLM 整理失败：未选择源文件目录。`);
     return;
   }
   if (confirmedLLMCategories.value.length === 0) {
     // 检查 App.vue 中的 confirmedLLMCategories
     alert("请先获取并确认 LLM 分类建议！");
-    organizationLog.value.unshift(
-      `[ERROR] LLM ${isDryRun ? "模拟运行" : "整理"}失败：未确认 LLM 分类。`
-    );
+    organizationLog.value.unshift(`[ERROR] LLM 整理失败：未确认 LLM 分类。`);
     return;
   }
   if (!llmApiKey.value) {
     // 检查 App.vue 中的 llmApiKey
     alert("API Key 未配置。请在设置页面配置 API Key。");
-    organizationLog.value.unshift(
-      `[ERROR] LLM ${isDryRun ? "模拟运行" : "整理"}失败：API Key 未配置。`
-    );
+    organizationLog.value.unshift(`[ERROR] LLM 整理失败：API Key 未配置。`);
     return;
   }
 
-  // organizationLog.value = []; // 全局日志不清空
-  organizationProgress.value = `LLM ${isDryRun ? "模拟运行" : "整理"}准备中...`;
+  organizationProgress.value = "正在生成LLM整理预览...";
+  organizationLog.value.unshift("[INFO] 开始生成LLM整理预览...");
+  organizationLog.value.unshift(`[INFO] 源目录: ${sourceDirectoryPath.value}`);
   organizationLog.value.unshift(
-    `[INFO] App.vue: 开始 LLM ${isDryRun ? "模拟运行" : "文件整理"}...`
+    `[INFO] 输出目录: ${outputDirectoryPath.value || "源目录内"}`
   );
-  logCommonOrganizationParams(isDryRun, "LLM");
   organizationLog.value.unshift(
-    `[INFO] App.vue: 使用 LLM 确认分类: ${confirmedLLMCategories.value.join(
-      ", "
-    )}`
+    `[INFO] 确认的分类: ${confirmedLLMCategories.value.join(", ")}`
   );
 
-  const options: LLMOrganizationOptions = {
-    sourceDirectoryPath: sourceDirectoryPath.value,
-    outputDirectoryPath: outputDirectoryPath.value,
-    confirmedCategories: confirmedLLMCategories.value,
+  // 确保所有数据都是可序列化的
+  const options = {
+    sourceDirectoryPath: sourceDirectoryPath.value!,
+    outputDirectoryPath: outputDirectoryPath.value || undefined,
+    confirmedCategories: [...confirmedLLMCategories.value], // 创建新数组避免引用问题
     apiKey: llmApiKey.value,
     unclassifiedFolderName: unclassifiedFolderName.value,
     recursive: recursive.value,
-    isDryRun: isDryRun,
   };
 
   try {
     // @ts-ignore
-    await window.electronAPI.startLLMOrganization(options);
+    const previewResult = await window.electronAPI.getLLMOrganizationPreview(
+      options
+    );
+
+    if (previewResult.success) {
+      llmOrganizationPreview.value = previewResult;
+      organizationLog.value.unshift(
+        `[SUCCESS] LLM整理预览生成成功，共 ${previewResult.totalFiles} 个文件`
+      );
+      organizationProgress.value = `LLM整理预览生成完成 - 共 ${previewResult.totalFiles} 个文件`;
+
+      // 显示分类统计
+      Object.entries(previewResult.categorySummary).forEach(
+        ([category, count]) => {
+          if ((count as number) > 0) {
+            organizationLog.value.unshift(
+              `[INFO] ${category}: ${count} 个文件`
+            );
+          }
+        }
+      );
+
+      // 显示预览界面
+      showLLMPreview.value = true;
+    } else {
+      organizationLog.value.unshift(
+        `[ERROR] LLM整理预览生成失败: ${previewResult.message}`
+      );
+      organizationProgress.value = `LLM整理预览失败: ${previewResult.message}`;
+    }
   } catch (error: any) {
     organizationLog.value.unshift(
-      `[ERROR] App.vue: LLM ${isDryRun ? "模拟运行" : "整理"}启动失败: ${
-        error.message || error
-      }`
+      `[ERROR] LLM整理预览生成失败: ${error.message || error}`
     );
-    organizationProgress.value = `LLM ${
-      isDryRun ? "模拟运行" : "整理"
-    }启动失败: ${error.message || error}`;
+    organizationProgress.value = `LLM整理预览失败: ${error.message || error}`;
   }
 };
 
 // 公共日志记录
-const logCommonOrganizationParams = (
-  isDryRun: boolean,
-  type: "手动" | "LLM"
-) => {
+const logCommonOrganizationParams = (type: "手动" | "LLM") => {
   organizationLog.value.unshift(`[INFO] 源目录: ${sourceDirectoryPath.value}`);
   organizationLog.value.unshift(
     `[INFO] 输出目录: ${outputDirectoryPath.value || "源目录"}`
@@ -360,9 +551,7 @@ const logCommonOrganizationParams = (
   organizationLog.value.unshift(
     `[INFO] 递归处理: ${recursive.value ? "是" : "否"}`
   );
-  organizationLog.value.unshift(
-    `[INFO] ${type}整理模式: ${isDryRun ? "模拟运行" : "实际执行"}`
-  );
+  organizationLog.value.unshift(`[INFO] ${type}整理模式: 实际执行`);
 };
 
 // IPC 进度监听 (保持不变)
@@ -466,5 +655,20 @@ onUnmounted(() => {
 .page-transition-leave-to {
   opacity: 0;
   transform: translateX(-20px);
+}
+
+/* 预览遮罩样式 */
+.preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
 }
 </style>

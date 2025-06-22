@@ -1,5 +1,13 @@
 <template>
   <div class="llm-mode-view">
+    <!-- 页面标题 -->
+    <div class="page-header">
+      <h2>AI智能分类</h2>
+      <p class="page-description">
+        使用AI智能分析文件内容和特征，自动生成分类建议，让文件整理更加智能和精准。
+      </p>
+    </div>
+
     <!-- 目录选择区域 -->
     <div class="directory-selection section-box">
       <h3>选择目录</h3>
@@ -16,14 +24,18 @@
       </div>
     </div>
 
-    <!-- LLM 参数配置区域 -->
+    <!-- AI 分类配置区域 -->
     <div class="llm-params-config section-box">
-      <h3>分类参数</h3>
+      <h3>分类设置</h3>
+      <p class="info-text">
+        配置AI分析参数，系统将根据文件特征智能生成分类建议。
+      </p>
       <div class="form-group">
-        <label for="classificationFocus">分类焦点/说明 (可选):</label>
+        <label for="classificationFocus">分类焦点说明 (可选):</label>
         <textarea
           id="classificationFocus"
           v-model="llmParams.classificationFocus"
+          placeholder="例如：按文件类型分类，或按项目分类..."
         ></textarea>
       </div>
       <div class="form-group">
@@ -32,14 +44,18 @@
           type="number"
           id="numberOfCategories"
           v-model.number="llmParams.numberOfCategories"
+          min="3"
+          max="20"
         />
       </div>
       <div class="form-group">
-        <label for="maxSamples">最大文件名样本数量 (可选):</label>
+        <label for="maxSamples">文件数量 (可选):</label>
         <input
           type="number"
           id="maxSamples"
           v-model.number="llmParams.maxSamples"
+          min="10"
+          max="500"
         />
       </div>
       <button
@@ -52,7 +68,7 @@
         请先在“设置”页面配置 API Key。
       </p>
       <p v-if="!props.sourceDirectoryPathLlm" class="info-text error-text">
-        请先选择源文件目录。
+        请先选择要整理的文件目录。
       </p>
     </div>
 
@@ -78,7 +94,7 @@
     <div class="actions section-box">
       <h3>开始整理</h3>
       <p v-if="!props.sourceDirectoryPathLlm" class="info-text error-text">
-        请先选择源文件目录。
+        请先选择要整理的文件目录。
       </p>
       <p
         v-if="
@@ -229,6 +245,33 @@ console.log("LLMModeView.vue setup");
 .llm-mode-view {
   padding: 10px;
 }
+
+/* 页面标题样式 */
+.page-header {
+  text-align: center;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  color: white;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.page-header h2 {
+  margin: 0 0 10px 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+.page-description {
+  margin: 0;
+  font-size: 16px;
+  opacity: 0.9;
+  line-height: 1.5;
+  max-width: 600px;
+  margin: 0 auto;
+}
 .section-box {
   padding: 20px;
   border: 1px solid #e0e0e0;
@@ -311,26 +354,36 @@ h3 {
 .llm-params-config button {
   background-color: #007bff;
   color: white;
+  border: none;
   padding: 10px 15px;
   font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
 }
 .llm-params-config button:disabled {
   background-color: #ced4da;
   cursor: not-allowed;
 }
+.llm-params-config button:hover:not(:disabled) {
+  background-color: #0056b3;
+}
 
 .actions .start-button {
-  background-color: #17a2b8; /* LLM 特有颜色 */
+  background-color: #28a745;
   color: white;
+  border: none;
   padding: 10px 18px;
   font-size: 15px;
+  border-radius: 4px;
+  cursor: pointer;
 }
 .actions .start-button:disabled {
   background-color: #ced4da;
   cursor: not-allowed;
+  color: #6c757d;
 }
 .actions .start-button:hover:not(:disabled) {
-  background-color: #138496;
+  background-color: #218838;
 }
 
 .progress-log .progress-bar {
@@ -368,7 +421,6 @@ h3 {
 .info-text {
   font-size: 13px;
   color: #6c757d;
-  margin-top: 10px;
   margin-bottom: 10px;
 }
 .error-text {

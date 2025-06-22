@@ -2,13 +2,71 @@
 import { ipcMain } from "electron";
 import * as fs from "fs";
 import * as path from "path";
-import { LLMCategoryOptions, LLMOrganizationOptions } from "./interfaces"; // 从共享接口模块导入
+import {
+  LLMCategoryOptions,
+  LLMOrganizationOptions,
+  QuickOrganizationOptions,
+  QuickOrganizationPreviewOptions,
+  QuickOrganizationPreview,
+  QuickOrganizationExecuteOptions,
+  LLMOrganizationPreviewOptions,
+  LLMOrganizationPreview,
+  LLMOrganizationExecuteOptions,
+  FileClassificationItem,
+} from "./interfaces"; // 从共享接口模块导入
 import { getSuggestionsFromLLM, getClassifyResultFromLLM } from "./llmService"; // 从 LLM 服务模块导入
 import {
   getShouldSaveDirectoryStructureLog,
   getLLMConfig,
 } from "./ipcGeneralHandlers"; // 新增：导入获取日志设置和LLM配置的函数
 import { recordOriginalDirectoryStructure } from "./directoryLogger"; // 新增：导入目录日志记录函数
+import { shouldIgnoreSystemFile } from "./systemFilesFilter";
+
+/**
+ * 清理空目录
+ * @param sourceDirectoryPath 源目录路径
+ * @param originalFilePaths 原始文件路径集合
+ * @param sendLog 日志发送函数
+ */
+async function cleanupEmptyDirectories(
+  sourceDirectoryPath: string,
+  originalFilePaths: Set<string>,
+  sendLog: (message: string, type?: "info" | "error" | "success") => void
+): Promise<void> {
+  const dirsToCheck = Array.from(originalFilePaths).sort(
+    (a, b) => b.length - a.length
+  ); // 从最深的目录开始检查
+
+  for (const dirPath of dirsToCheck) {
+    try {
+      // 跳过源目录本身
+      if (dirPath === sourceDirectoryPath) {
+        continue;
+      }
+
+      // 检查目录是否存在
+      if (!fs.existsSync(dirPath)) {
+        continue;
+      }
+
+      // 检查目录是否为空（忽略系统文件）
+      const entries = fs.readdirSync(dirPath);
+      const nonSystemEntries = entries.filter(
+        (entry) => !shouldIgnoreSystemFile(entry)
+      );
+
+      if (nonSystemEntries.length === 0) {
+        // 目录为空，删除它
+        fs.rmdirSync(dirPath);
+        const relativePath = path.relative(sourceDirectoryPath, dirPath);
+        sendLog(`删除空目录: ${relativePath}`, "success");
+      }
+    } catch (error: any) {
+      const relativePath = path.relative(sourceDirectoryPath, dirPath);
+      sendLog(`删除目录失败: ${relativePath}. 错误: ${error.message}`, "error");
+    }
+  }
+}
 
 // --- 缓存相关变量 ---
 // 这些缓存在 main.ts 中定义，理想情况下应该也移到专门的缓存模块或由 LLM 相关服务管理。
@@ -22,30 +80,6 @@ let llmCategorySuggestionsCache: {
   options: LLMCategoryOptions | null;
   suggestions: string[];
 } = { options: null, suggestions: [] };
-
-// 用于缓存 LLM 单个文件分类结果
-let llmFileClassificationCache: Map<string, string> = new Map();
-// 用于存储上一次 LLM 模拟运行的选项
-let lastLLMOrganizationOptionsForCache: LLMOrganizationOptions | null = null;
-
-// 辅助函数：比较 LLM 整理选项是否相同，用于判断缓存有效性 (从 main.ts 迁移)
-function areLLMOptionsIdentical(
-  optionsA: LLMOrganizationOptions | null,
-  optionsB: LLMOrganizationOptions | null
-): boolean {
-  if (!optionsA || !optionsB) {
-    return false;
-  }
-  return (
-    optionsA.sourceDirectoryPath === optionsB.sourceDirectoryPath &&
-    optionsA.outputDirectoryPath === optionsB.outputDirectoryPath &&
-    JSON.stringify(optionsA.confirmedCategories.slice().sort()) ===
-      JSON.stringify(optionsB.confirmedCategories.slice().sort()) &&
-    optionsA.unclassifiedFolderName === optionsB.unclassifiedFolderName &&
-    optionsA.recursive === optionsB.recursive &&
-    optionsA.apiKey === optionsB.apiKey
-  );
-}
 
 /**
  * @function registerGetLLMCategorySuggestionsHandler
@@ -109,6 +143,12 @@ export function registerGetLLMCategorySuggestionsHandler(): void {
           for (const entry of entries) {
             if (collectedFileNames.length >= maxSamples) break;
             const fullPath = path.join(dirPath, entry.name);
+
+            // 检查是否应该忽略该条目（系统文件或文件夹）
+            if (shouldIgnoreSystemFile(entry.name)) {
+              continue;
+            }
+
             if (entry.isFile()) {
               collectedFileNames.push(entry.name);
             } else if (entry.isDirectory() && recursive) {
@@ -133,19 +173,17 @@ export function registerGetLLMCategorySuggestionsHandler(): void {
           {
             role: "system" as const,
             content:
-              "You are an intelligent assistant specializing in generating a JSON formatted list of folder category names based on user-provided file name samples and classification focus.",
+              "你是一个智能助手，专门根据用户提供的文件名样本和分类焦点生成JSON格式的文件夹分类名称列表。请使用中文生成分类名称。",
           },
           {
             role: "user" as const,
-            content: `Based on the following file name samples:\n\n${collectedFileNames
+            content: `基于以下文件名样本：\n\n${collectedFileNames
               .slice(0, maxSamples)
-              .join(
-                "\n"
-              )}\n\nAnd considering the classification focus (if provided): '${
-              classificationFocus || "No specific focus"
-            }', please generate ${
-              numberOfCategories || "approximately 5-7"
-            } suitable folder category names.\n\nPlease return the result strictly as a JSON formatted string array, for example: ["Images", "Documents", "Work Files"]. Do not include any additional explanations or text, only the JSON array.`,
+              .join("\n")}\n\n考虑分类焦点（如果提供）：'${
+              classificationFocus || "无特定焦点"
+            }'，请生成 ${
+              numberOfCategories || "大约5-7个"
+            } 个合适的文件夹分类名称。\n\n请严格按照JSON格式的字符串数组返回结果，例如：["图片", "文档", "工作文件"]。不要包含任何额外的解释或文字，只返回JSON数组。所有分类名称必须使用中文。`,
           },
         ];
 
@@ -156,6 +194,19 @@ export function registerGetLLMCategorySuggestionsHandler(): void {
         const baseUrl = options.baseUrl || llmConfig.baseUrl;
         const model = options.model || llmConfig.model;
 
+        // 添加详细的调试日志
+        log(
+          `[DEBUG] LLM Config - BaseURL: ${baseUrl}, Model: ${model}`,
+          "info"
+        );
+        log(`[DEBUG] API Key length: ${apiKey?.length || 0}`, "info");
+        log(`[DEBUG] Prompt Messages:`, "info");
+        log(`[DEBUG] System: ${promptMessages[0].content}`, "info");
+        log(
+          `[DEBUG] User: ${promptMessages[1].content.substring(0, 500)}...`,
+          "info"
+        );
+
         const suggestions = await getSuggestionsFromLLM(
           apiKey,
           promptMessages,
@@ -163,6 +214,12 @@ export function registerGetLLMCategorySuggestionsHandler(): void {
           baseUrl
         );
         log(`LLM service returned ${suggestions.length} suggestions.`);
+        log(
+          `[DEBUG] Raw LLM suggestions response: ${JSON.stringify(
+            suggestions
+          )}`,
+          "info"
+        );
 
         // 更新缓存
         llmCategorySuggestionsCache = { options, suggestions };
@@ -199,28 +256,19 @@ export function registerStartLLMOrganizationHandler(): void {
         apiKey,
         unclassifiedFolderName,
         recursive,
-        isDryRun,
       } = options;
 
       const sender = event.sender;
-      let shouldUseCache = false;
 
       const sendLog = (
         message: string,
-        type: "info" | "error" | "success" | "dryRun" = "info"
+        type: "info" | "error" | "success" = "info"
       ) => {
-        const logMessage =
-          isDryRun && type !== "error" && type !== "dryRun"
-            ? `[模拟] ${message}`
-            : message;
-        const logLevel = type === "dryRun" ? "info" : type;
-        const finalMessage =
-          type === "dryRun" ? `[模拟] ${message}` : logMessage;
-        console.log(`[IPC LLM Org] ${logLevel.toUpperCase()}: ${finalMessage}`);
+        console.log(`[LLM文件整理] ${type.toUpperCase()}: ${message}`);
         sender.send("organization-progress", {
           type: "log",
-          message: finalMessage,
-          level: logLevel,
+          message: message,
+          level: type,
         });
       };
 
@@ -229,94 +277,48 @@ export function registerStartLLMOrganizationHandler(): void {
       };
 
       let processedFileCount = 0;
-      const sendFileProcessedUpdate = (simulated: boolean = false) => {
+      const sendFileProcessedUpdate = () => {
         processedFileCount++;
         sender.send("organization-progress", {
           type: "fileProcessed",
           count: processedFileCount,
-          message: simulated ? "模拟处理" : "已处理",
+          message: "已处理",
         });
       };
 
-      sendLog(
-        `${
-          isDryRun ? "Starting LLM dry run" : "Starting LLM organization"
-        }, Source: ${sourceDirectoryPath}`
-      );
+      sendLog(`开始LLM文件整理，源目录: ${sourceDirectoryPath}`);
 
       // 新增：在实际操作前记录原始目录结构
-      if (!isDryRun && getShouldSaveDirectoryStructureLog()) {
+      if (getShouldSaveDirectoryStructureLog()) {
         try {
-          sendLog("正在记录原始目录结构 (LLM Mode)...", "info");
+          sendLog("正在记录原始目录结构...", "info");
           const logFilePath = await recordOriginalDirectoryStructure(
             sourceDirectoryPath,
             outputDirectoryPath === null ? undefined : outputDirectoryPath
           );
           if (logFilePath) {
-            sendLog(
-              `原始目录结构已保存到 (LLM Mode): ${logFilePath}`,
-              "success"
-            );
+            sendLog(`原始目录结构已保存到: ${logFilePath}`, "success");
           } else {
-            sendLog(
-              "记录原始目录结构失败 (LLM Mode)，但整理操作将继续。",
-              "error"
-            );
+            sendLog("记录原始目录结构失败，但整理操作将继续。", "error");
           }
         } catch (logError: any) {
           sendLog(
-            `记录原始目录结构时发生错误 (LLM Mode): ${logError.message}，整理操作将继续。`,
+            `记录原始目录结构时发生错误: ${logError.message}，整理操作将继续。`,
             "error"
           );
         }
       }
 
-      // 缓存逻辑 (与 main.ts 中类似)
-      if (isDryRun) {
-        llmFileClassificationCache.clear();
-        lastLLMOrganizationOptionsForCache = { ...options };
-        sendLog(
-          "Dry run: Cleared and prepared new LLM file classification cache.",
-          "info"
-        );
-        shouldUseCache = false;
-      } else {
-        if (
-          lastLLMOrganizationOptionsForCache &&
-          areLLMOptionsIdentical(options, lastLLMOrganizationOptionsForCache) &&
-          llmFileClassificationCache.size > 0
-        ) {
-          shouldUseCache = true;
-          sendLog(
-            "Matching dry run cache found, will reuse LLM classifications.",
-            "success"
-          );
-        } else {
-          shouldUseCache = false;
-          sendLog(
-            "No matching dry run cache, will perform new LLM classifications.",
-            "info"
-          );
-          llmFileClassificationCache.clear();
-          lastLLMOrganizationOptionsForCache = null;
-        }
-      }
+      sendLog("开始LLM文件分类...", "info");
 
       const baseTargetDir = outputDirectoryPath || sourceDirectoryPath;
       if (outputDirectoryPath && !fs.existsSync(outputDirectoryPath)) {
         try {
-          if (isDryRun) {
-            sendLog(
-              `Planned to create output directory: ${outputDirectoryPath}`,
-              "dryRun"
-            );
-          } else {
-            fs.mkdirSync(outputDirectoryPath, { recursive: true });
-            sendLog(
-              `Created output directory: ${outputDirectoryPath}`,
-              "success"
-            );
-          }
+          fs.mkdirSync(outputDirectoryPath, { recursive: true });
+          sendLog(
+            `Created output directory: ${outputDirectoryPath}`,
+            "success"
+          );
         } catch (error: any) {
           sendLog(
             `Failed to create output directory: ${error.message}`,
@@ -328,13 +330,6 @@ export function registerStartLLMOrganizationHandler(): void {
           };
         }
       }
-
-      const systemFilesToIgnore = [
-        ".ds_store",
-        "thumbs.db",
-        "desktop.ini",
-        ".file-organizer-logs",
-      ]; // 将日志文件夹也加入忽略列表
 
       async function organizeDirectoryLLM(
         currentSourceDir: string,
@@ -349,7 +344,7 @@ export function registerStartLLMOrganizationHandler(): void {
 
           // 检查是否应该忽略该条目 (系统文件或日志文件夹本身)
           if (
-            systemFilesToIgnore.includes(entryName.toLowerCase()) ||
+            shouldIgnoreSystemFile(entryName) ||
             (entry.isDirectory() &&
               entryName === ".file-organizer-logs" &&
               (outputDirectoryPath
@@ -389,105 +384,76 @@ export function registerStartLLMOrganizationHandler(): void {
           } else if (entry.isFile()) {
             sendLog(`Processing file: ${entryName}`);
             let llmAssignedCategory: string | null = null;
-            const fileKeyForCache = fullSourcePath;
 
-            if (isDryRun) {
-              const fileExtension = path.extname(entryName).toLowerCase();
-              const promptMessages = [
-                /* ... construct prompt for single file classification ... */
-                {
-                  role: "system" as const,
-                  content: `You are a file classification assistant. Based on the file name${
-                    fileExtension
-                      ? ` (file type inferred as ${fileExtension})`
-                      : ""
-                  } and the given category list, assign the file to the most appropriate category. If none are suitable, respond with "Uncategorized". Return only one word: the category name or "Uncategorized".`,
-                },
-                {
-                  role: "user" as const,
-                  content: `File name: "${entryName}".\nPlease select the most appropriate category from the following list:\n${confirmedCategories.join(
-                    "\n"
-                  )}\nIf none are suitable, respond "Uncategorized".`,
-                },
-              ];
-              // 获取LLM配置
-              const llmConfig = getLLMConfig();
-              const baseUrl = options.baseUrl || llmConfig.baseUrl;
-              const model = options.model || llmConfig.model;
+            // 直接进行 LLM 分类，不使用缓存
+            sendLog(`Classifying file "${entryName}" with LLM...`, "info");
+            const fileExtension = path.extname(entryName).toLowerCase();
 
-              llmAssignedCategory = await getClassifyResultFromLLM(
-                apiKey,
-                promptMessages,
-                confirmedCategories,
-                model,
-                baseUrl
-              );
-              llmFileClassificationCache.set(
-                fileKeyForCache,
+            // 添加调试日志：显示确认的分类列表
+            sendLog(
+              `[DEBUG] Confirmed categories for classification: ${JSON.stringify(
+                confirmedCategories
+              )}`,
+              "info"
+            );
+
+            const promptMessages = [
+              {
+                role: "system" as const,
+                content: `你是一个文件分类助手。根据文件名${
+                  fileExtension ? `（推断文件类型为 ${fileExtension}）` : ""
+                }和给定的分类列表，将文件分配到最合适的分类中。如果没有合适的分类，请回复"未分类"。只返回一个词：分类名称或"未分类"。注意分类使用中文。`,
+              },
+              {
+                role: "user" as const,
+                content: `文件名："${entryName}"。\n请从以下列表中选择最合适的分类：\n${confirmedCategories.join(
+                  "\n"
+                )}\n如果没有合适的分类，请回复"未分类"。`,
+              },
+            ];
+
+            // 获取LLM配置
+            const llmConfig = getLLMConfig();
+            const baseUrl = options.baseUrl || llmConfig.baseUrl;
+            const model = options.model || llmConfig.model;
+
+            // 添加调试日志：显示分类请求的详细信息
+            sendLog(
+              `[DEBUG] File classification request for "${entryName}":`,
+              "info"
+            );
+            sendLog(
+              `[DEBUG] System prompt: ${promptMessages[0].content}`,
+              "info"
+            );
+            sendLog(
+              `[DEBUG] User prompt: ${promptMessages[1].content}`,
+              "info"
+            );
+            sendLog(
+              `[DEBUG] Using model: ${model}, baseUrl: ${baseUrl}`,
+              "info"
+            );
+
+            llmAssignedCategory = await getClassifyResultFromLLM(
+              apiKey,
+              promptMessages,
+              confirmedCategories,
+              model,
+              baseUrl
+            );
+
+            // 添加调试日志：显示LLM的原始响应
+            sendLog(
+              `[DEBUG] Raw LLM classification response for "${entryName}": "${llmAssignedCategory}"`,
+              "info"
+            );
+            sendLog(
+              `File "${entryName}" LLM classified as: "${
                 llmAssignedCategory || unclassifiedFolderName
-              );
-              sendLog(
-                `[Dry Run] File "${entryName}" LLM classified as: "${
-                  llmAssignedCategory || unclassifiedFolderName
-                }" (cached)`,
-                "dryRun"
-              );
-            } else if (
-              shouldUseCache &&
-              llmFileClassificationCache.has(fileKeyForCache)
-            ) {
-              llmAssignedCategory =
-                llmFileClassificationCache.get(fileKeyForCache)!;
-              sendLog(
-                `[Cache Reuse] File "${entryName}" classified from cache as: "${llmAssignedCategory}"`,
-                "success"
-              );
-              if (llmAssignedCategory === unclassifiedFolderName)
-                llmAssignedCategory = null; // Treat as unclassified by LLM
-            } else {
-              sendLog(
-                `[New LLM Call] File "${entryName}" ${
-                  shouldUseCache ? "(cache miss)" : "(no valid cache)"
-                }, classifying...`,
-                "info"
-              );
-              const fileExtension = path.extname(entryName).toLowerCase();
-              const promptMessages = [
-                // Duplicated prompt construction, can be refactored
-                {
-                  role: "system" as const,
-                  content: `You are a file classification assistant. Based on the file name${
-                    fileExtension
-                      ? ` (file type inferred as ${fileExtension})`
-                      : ""
-                  } and the given category list, assign the file to the most appropriate category. If none are suitable, respond with "Uncategorized". Return only one word: the category name or "Uncategorized".`,
-                },
-                {
-                  role: "user" as const,
-                  content: `File name: "${entryName}".\nPlease select the most appropriate category from the following list:\n${confirmedCategories.join(
-                    "\n"
-                  )}\nIf none are suitable, respond "Uncategorized".`,
-                },
-              ];
-              // 获取LLM配置
-              const llmConfig = getLLMConfig();
-              const baseUrl = options.baseUrl || llmConfig.baseUrl;
-              const model = options.model || llmConfig.model;
-
-              llmAssignedCategory = await getClassifyResultFromLLM(
-                apiKey,
-                promptMessages,
-                confirmedCategories,
-                model,
-                baseUrl
-              );
-              sendLog(
-                `[New LLM Call] File "${entryName}" LLM classified as: "${
-                  llmAssignedCategory || unclassifiedFolderName
-                }"`,
-                "info"
-              );
-            }
+              }"`,
+              "info"
+            );
 
             const targetFolderName =
               llmAssignedCategory || unclassifiedFolderName;
@@ -498,15 +464,8 @@ export function registerStartLLMOrganizationHandler(): void {
             );
 
             if (!fs.existsSync(targetDir)) {
-              if (isDryRun) {
-                sendLog(
-                  `Planned to create directory (LLM): ${targetDir}`,
-                  "dryRun"
-                );
-              } else {
-                fs.mkdirSync(targetDir, { recursive: true });
-                sendLog(`Created directory (LLM): ${targetDir}`, "success");
-              }
+              fs.mkdirSync(targetDir, { recursive: true });
+              sendLog(`Created directory (LLM): ${targetDir}`, "success");
             }
 
             let targetFilePath = path.join(targetDir, entryName);
@@ -517,7 +476,7 @@ export function registerStartLLMOrganizationHandler(): void {
 
             const checkFileExists = (filePathToCheck: string) => {
               // 如果源路径和目标路径相同（例如，文件已在目标位置且未重命名），则不应视为“存在冲突”
-              if (fullSourcePath === filePathToCheck && !isDryRun) return false;
+              if (fullSourcePath === filePathToCheck) return false;
               return fs.existsSync(filePathToCheck);
             };
 
@@ -530,82 +489,50 @@ export function registerStartLLMOrganizationHandler(): void {
               isRenamed = true;
             }
 
-            if (isDryRun) {
+            // 再次检查目标路径是否与源路径相同，避免不必要的移动
+            if (fullSourcePath === targetFilePath) {
               sendLog(
-                `File "${entryName}" would be moved ${
+                `File "${entryName}" is already in the target location "${targetFilePath}" (LLM), no move needed.`,
+                "info"
+              );
+              sendFileProcessedUpdate(); // Still count as processed
+              continue;
+            }
+            try {
+              fs.renameSync(fullSourcePath, targetFilePath);
+              sendLog(
+                `Moved file (LLM): "${entryName}" ${
                   isRenamed
                     ? `and renamed to "${path.basename(targetFilePath)}"`
                     : ""
-                } to "${targetDir}" (LLM)`,
-                "dryRun"
+                } to "${targetDir}"`,
+                "success"
               );
-              sendFileProcessedUpdate(true);
-            } else {
-              // 再次检查目标路径是否与源路径相同，避免不必要的移动
-              if (fullSourcePath === targetFilePath) {
-                sendLog(
-                  `File "${entryName}" is already in the target location "${targetFilePath}" (LLM), no move needed.`,
-                  "info"
-                );
-                sendFileProcessedUpdate(false); // Still count as processed
-                continue;
-              }
-              try {
-                fs.renameSync(fullSourcePath, targetFilePath);
-                sendLog(
-                  `Moved file (LLM): "${entryName}" ${
-                    isRenamed
-                      ? `and renamed to "${path.basename(targetFilePath)}"`
-                      : ""
-                  } to "${targetDir}"`,
-                  "success"
-                );
-                sendFileProcessedUpdate(false);
-              } catch (moveError: any) {
-                sendLog(
-                  `Failed to move file "${entryName}" (LLM): ${moveError.message}`,
-                  "error"
-                );
-              }
+              sendFileProcessedUpdate();
+            } catch (moveError: any) {
+              sendLog(
+                `Failed to move file "${entryName}" (LLM): ${moveError.message}`,
+                "error"
+              );
             }
           }
         }
       } // End of organizeDirectoryLLM
 
       try {
-        sendStatus(
-          isDryRun
-            ? "LLM dry run in progress..."
-            : "LLM organization in progress..."
-        );
+        sendStatus("LLM organization in progress...");
         await organizeDirectoryLLM(sourceDirectoryPath);
-        sendStatus(
-          isDryRun ? "LLM dry run complete!" : "LLM organization complete!"
-        );
-        sendLog(
-          isDryRun
-            ? "All LLM operations simulated."
-            : "All files processed with LLM.",
-          isDryRun ? "dryRun" : "success"
-        );
+        sendStatus("LLM organization complete!");
+        sendLog("All files processed with LLM.", "success");
 
-        let finalMessage = isDryRun
-          ? "LLM dry run completed successfully."
-          : "LLM file organization completed successfully.";
-        if (!isDryRun && shouldUseCache)
-          finalMessage += " (Results based on cache)";
-        else if (!isDryRun && !shouldUseCache)
-          finalMessage += " (Results based on new LLM calls)";
-
+        const finalMessage = "LLM file organization completed successfully.";
         return { success: true, message: finalMessage };
       } catch (error: any) {
         sendLog(
           `Critical error during LLM organization: ${error.message}`,
           "error"
         );
-        sendStatus(
-          isDryRun ? "LLM dry run failed." : "LLM organization failed."
-        );
+        sendStatus("LLM organization failed.");
         return {
           success: false,
           message: `LLM organization failed: ${error.message}`,
@@ -615,5 +542,769 @@ export function registerStartLLMOrganizationHandler(): void {
   );
   console.log(
     "[IPCLLMHandlers] 'start-llm-organization' IPC handler registered."
+  );
+}
+
+/**
+ * @function registerQuickOrganizationPreviewHandler
+ * @description 注册用于处理快速分类预览请求的 IPC Handler。
+ */
+export function registerQuickOrganizationPreviewHandler(): void {
+  ipcMain.handle(
+    "quick-organization-preview",
+    async (event, options: QuickOrganizationPreviewOptions) => {
+      const {
+        sourceDirectoryPath,
+        categories,
+        unclassifiedFolderName,
+        recursive,
+      } = options;
+
+      const sender = event.sender;
+
+      const sendLog = (
+        message: string,
+        type: "info" | "error" | "success" = "info"
+      ) => {
+        console.log(`[快速分类预览] ${type.toUpperCase()}: ${message}`);
+        sender.send("organization-progress", {
+          type: "log",
+          message: message,
+          level: type,
+        });
+      };
+
+      const sendStatus = (message: string) => {
+        sender.send("organization-progress", { type: "status", message });
+      };
+
+      sendLog(`开始快速分类预览，源目录: ${sourceDirectoryPath}`);
+      sendLog(`分类列表: ${categories.join(", ")}`);
+
+      // 获取LLM配置
+      const llmConfig = getLLMConfig();
+      if (!llmConfig.apiKey) {
+        const errorMsg = "LLM API密钥未配置，无法进行快速分类预览。";
+        sendLog(errorMsg, "error");
+        return {
+          success: false,
+          message: errorMsg,
+          classifications: [],
+          categorySummary: {},
+          totalFiles: 0,
+        };
+      }
+
+      sendLog("开始收集文件并进行分类预览...", "info");
+      sendStatus("正在分析文件并生成分类预览...");
+
+      const classifications: FileClassificationItem[] = [];
+      const categorySummary: { [category: string]: number } = {};
+
+      // 初始化分类统计
+      categories.forEach((category) => {
+        categorySummary[category] = 0;
+      });
+      categorySummary[unclassifiedFolderName] = 0;
+
+      async function collectAndClassifyFiles(
+        currentSourceDir: string,
+        currentRelativePath: string = ""
+      ) {
+        const entries = fs.readdirSync(currentSourceDir, {
+          withFileTypes: true,
+        });
+
+        for (const entry of entries) {
+          const entryName = entry.name;
+          const fullSourcePath = path.join(currentSourceDir, entryName);
+          const relativePath = currentRelativePath
+            ? path.join(currentRelativePath, entryName)
+            : entryName;
+
+          // 跳过系统文件
+          if (shouldIgnoreSystemFile(entryName)) {
+            sendLog(`跳过系统文件: ${entryName}`);
+            continue;
+          }
+
+          if (entry.isDirectory()) {
+            if (recursive) {
+              sendLog(`进入子目录: ${entryName}`);
+              await collectAndClassifyFiles(fullSourcePath, relativePath);
+            } else {
+              sendLog(`跳过子目录（非递归模式）: ${entryName}`);
+            }
+          } else if (entry.isFile()) {
+            sendLog(`正在分析文件: ${relativePath}`);
+
+            // 使用 LLM 进行分类
+            const fileExtension = path.extname(entryName).toLowerCase();
+
+            const promptMessages = [
+              {
+                role: "system" as const,
+                content: `你是一个文件分类助手。根据文件名${
+                  fileExtension ? `（推断文件类型为 ${fileExtension}）` : ""
+                }和给定的分类列表，将文件分配到最合适的分类中。如果没有合适的分类，请回复"未分类"。只返回一个词：分类名称或"未分类"。注意分类使用中文。`,
+              },
+              {
+                role: "user" as const,
+                content: `文件名："${entryName}"。\n请从以下列表中选择最合适的分类：\n${categories.join(
+                  "\n"
+                )}\n如果没有合适的分类，请回复"未分类"。`,
+              },
+            ];
+
+            const llmAssignedCategory = await getClassifyResultFromLLM(
+              llmConfig.apiKey,
+              promptMessages,
+              categories,
+              llmConfig.model,
+              llmConfig.baseUrl
+            );
+
+            const assignedCategory =
+              llmAssignedCategory || unclassifiedFolderName;
+            const targetPath = path.join(
+              sourceDirectoryPath,
+              assignedCategory,
+              entryName
+            );
+
+            // 添加到分类结果
+            classifications.push({
+              filePath: fullSourcePath,
+              fileName: entryName,
+              relativePath: relativePath,
+              assignedCategory: assignedCategory,
+              targetPath: targetPath,
+            });
+
+            // 更新统计
+            categorySummary[assignedCategory] =
+              (categorySummary[assignedCategory] || 0) + 1;
+
+            sendLog(`文件 "${relativePath}" 预分类为: "${assignedCategory}"`);
+          }
+        }
+      }
+
+      try {
+        await collectAndClassifyFiles(sourceDirectoryPath);
+
+        const totalFiles = classifications.length;
+        sendLog(`分类预览完成，共分析 ${totalFiles} 个文件`, "success");
+        sendStatus("分类预览生成完成");
+
+        // 生成分类统计日志
+        Object.entries(categorySummary).forEach(([category, count]) => {
+          if (count > 0) {
+            sendLog(`${category}: ${count} 个文件`);
+          }
+        });
+
+        return {
+          success: true,
+          message: `成功生成分类预览，共 ${totalFiles} 个文件`,
+          classifications: classifications,
+          categorySummary: categorySummary,
+          totalFiles: totalFiles,
+        };
+      } catch (error: any) {
+        sendLog(`分类预览过程中发生错误: ${error.message}`, "error");
+        sendStatus("分类预览失败");
+        return {
+          success: false,
+          message: `分类预览失败: ${error.message}`,
+          classifications: [],
+          categorySummary: {},
+          totalFiles: 0,
+        };
+      }
+    }
+  );
+  console.log(
+    "[IPCLLMHandlers] 'quick-organization-preview' IPC handler registered."
+  );
+}
+
+/**
+ * @function registerQuickOrganizationExecuteHandler
+ * @description 注册用于执行快速分类的 IPC Handler。
+ */
+export function registerQuickOrganizationExecuteHandler(): void {
+  ipcMain.handle(
+    "quick-organization-execute",
+    async (event, options: QuickOrganizationExecuteOptions) => {
+      const { sourceDirectoryPath, classifications } = options;
+
+      const sender = event.sender;
+
+      const sendLog = (
+        message: string,
+        type: "info" | "error" | "success" = "info"
+      ) => {
+        console.log(`[快速分类执行] ${type.toUpperCase()}: ${message}`);
+        sender.send("organization-progress", {
+          type: "log",
+          message: message,
+          level: type,
+        });
+      };
+
+      const sendStatus = (message: string) => {
+        sender.send("organization-progress", { type: "status", message });
+      };
+
+      let processedFileCount = 0;
+      const sendFileProcessedUpdate = () => {
+        processedFileCount++;
+        sender.send("organization-progress", {
+          type: "fileProcessed",
+          count: processedFileCount,
+          message: "已处理",
+        });
+      };
+
+      sendLog(`开始执行快速分类，源目录: ${sourceDirectoryPath}`);
+      sendLog(`将处理 ${classifications.length} 个文件`);
+
+      // 记录原始目录结构
+      if (getShouldSaveDirectoryStructureLog()) {
+        try {
+          sendLog("正在记录原始目录结构...", "info");
+          const logFilePath = await recordOriginalDirectoryStructure(
+            sourceDirectoryPath,
+            undefined
+          );
+          if (logFilePath) {
+            sendLog(`原始目录结构已保存到: ${logFilePath}`, "success");
+          } else {
+            sendLog("记录原始目录结构失败，但整理操作将继续。", "error");
+          }
+        } catch (logError: any) {
+          sendLog(
+            `记录原始目录结构时发生错误: ${logError.message}，整理操作将继续。`,
+            "error"
+          );
+        }
+      }
+
+      sendStatus("正在执行文件分类...");
+
+      try {
+        // 记录所有原始文件路径，用于后续清理空目录
+        const originalFilePaths = new Set<string>();
+        classifications.forEach((item) => {
+          originalFilePaths.add(path.dirname(item.filePath));
+        });
+
+        // 创建所需的目录
+        const requiredDirs = new Set<string>();
+        classifications.forEach((item) => {
+          const targetDir = path.dirname(item.targetPath);
+          requiredDirs.add(targetDir);
+        });
+
+        for (const dir of requiredDirs) {
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+            sendLog(
+              `创建目录: ${path.relative(sourceDirectoryPath, dir)}`,
+              "success"
+            );
+          }
+        }
+
+        // 执行文件移动
+        for (const item of classifications) {
+          try {
+            // 检查源文件是否存在
+            if (!fs.existsSync(item.filePath)) {
+              sendLog(`源文件不存在，跳过: ${item.relativePath}`, "error");
+              continue;
+            }
+
+            // 处理目标文件名冲突
+            let targetPath = item.targetPath;
+            let counter = 1;
+            const originalName = path.parse(item.fileName).name;
+            const originalExt = path.parse(item.fileName).ext;
+
+            while (fs.existsSync(targetPath) && targetPath !== item.filePath) {
+              const newFileName = `${originalName}_${counter}${originalExt}`;
+              targetPath = path.join(
+                path.dirname(item.targetPath),
+                newFileName
+              );
+              counter++;
+            }
+
+            // 如果源路径和目标路径相同，跳过移动
+            if (item.filePath === targetPath) {
+              sendLog(`文件已在目标位置，跳过: ${item.relativePath}`, "info");
+              sendFileProcessedUpdate();
+              continue;
+            }
+
+            // 执行文件移动
+            fs.renameSync(item.filePath, targetPath);
+            const targetRelativePath = path.relative(
+              sourceDirectoryPath,
+              targetPath
+            );
+            sendLog(
+              `移动文件: ${item.relativePath} -> ${targetRelativePath}`,
+              "success"
+            );
+            sendFileProcessedUpdate();
+          } catch (moveError: any) {
+            sendLog(
+              `移动文件失败: ${item.relativePath}. 错误: ${moveError.message}`,
+              "error"
+            );
+          }
+        }
+
+        // 清理空目录
+        sendStatus("正在清理空目录...");
+        await cleanupEmptyDirectories(
+          sourceDirectoryPath,
+          originalFilePaths,
+          sendLog
+        );
+
+        sendStatus("快速分类执行完成");
+        sendLog(`文件分类完成，共处理 ${processedFileCount} 个文件`, "success");
+
+        return {
+          success: true,
+          message: `快速分类执行成功，共处理 ${processedFileCount} 个文件`,
+        };
+      } catch (error: any) {
+        sendLog(`快速分类执行过程中发生严重错误: ${error.message}`, "error");
+        sendStatus("快速分类执行失败");
+        return {
+          success: false,
+          message: `快速分类执行失败: ${error.message}`,
+        };
+      }
+    }
+  );
+  console.log(
+    "[IPCLLMHandlers] 'quick-organization-execute' IPC handler registered."
+  );
+}
+
+/**
+ * @function registerLLMOrganizationPreviewHandler
+ * @description 注册用于处理LLM文件整理预览请求的 IPC Handler。
+ */
+export function registerLLMOrganizationPreviewHandler(): void {
+  ipcMain.handle(
+    "llm-organization-preview",
+    async (event, options: LLMOrganizationPreviewOptions) => {
+      const {
+        sourceDirectoryPath,
+        outputDirectoryPath,
+        confirmedCategories,
+        apiKey,
+        unclassifiedFolderName,
+        recursive,
+        baseUrl,
+        model,
+      } = options;
+
+      const sender = event.sender;
+
+      const sendLog = (
+        message: string,
+        type: "info" | "error" | "success" = "info"
+      ) => {
+        console.log(`[LLM整理预览] ${type.toUpperCase()}: ${message}`);
+        sender.send("organization-progress", {
+          type: "log",
+          message: message,
+          level: type,
+        });
+      };
+
+      const sendStatus = (message: string) => {
+        sender.send("organization-progress", { type: "status", message });
+      };
+
+      sendLog(`开始LLM文件整理预览，源目录: ${sourceDirectoryPath}`);
+      sendLog(`分类列表: ${confirmedCategories.join(", ")}`);
+      if (outputDirectoryPath) {
+        sendLog(`输出目录: ${outputDirectoryPath}`);
+      } else {
+        sendLog("将在源目录内进行整理");
+      }
+
+      // 获取LLM配置
+      const llmConfig = getLLMConfig();
+      const finalApiKey = apiKey || llmConfig.apiKey;
+      const finalBaseUrl = baseUrl || llmConfig.baseUrl;
+      const finalModel = model || llmConfig.model;
+
+      if (!finalApiKey) {
+        const errorMsg = "LLM API密钥未配置，无法进行文件整理预览。";
+        sendLog(errorMsg, "error");
+        return {
+          success: false,
+          message: errorMsg,
+          classifications: [],
+          categorySummary: {},
+          totalFiles: 0,
+        };
+      }
+
+      sendLog("开始收集文件并进行LLM分类预览...", "info");
+      sendStatus("正在分析文件并生成LLM分类预览...");
+
+      const classifications: FileClassificationItem[] = [];
+      const categorySummary: { [category: string]: number } = {};
+
+      // 初始化分类统计
+      confirmedCategories.forEach((category) => {
+        categorySummary[category] = 0;
+      });
+      categorySummary[unclassifiedFolderName] = 0;
+
+      const actualOutputDir = outputDirectoryPath || sourceDirectoryPath;
+
+      async function collectAndClassifyFilesLLM(
+        currentSourceDir: string,
+        currentRelativePath: string = ""
+      ) {
+        const entries = fs.readdirSync(currentSourceDir, {
+          withFileTypes: true,
+        });
+
+        for (const entry of entries) {
+          const entryName = entry.name;
+          const fullSourcePath = path.join(currentSourceDir, entryName);
+          const relativePath = currentRelativePath
+            ? path.join(currentRelativePath, entryName)
+            : entryName;
+
+          // 跳过系统文件和日志文件夹
+          if (
+            shouldIgnoreSystemFile(entryName) ||
+            (entry.isDirectory() &&
+              entryName === ".file-organizer-logs" &&
+              (outputDirectoryPath
+                ? path.dirname(fullSourcePath) === outputDirectoryPath
+                : path.dirname(fullSourcePath) === sourceDirectoryPath))
+          ) {
+            sendLog(`跳过系统文件/文件夹: ${entryName}`);
+            continue;
+          }
+
+          // 如果输出目录在源目录内，跳过输出目录本身
+          if (
+            recursive &&
+            outputDirectoryPath &&
+            fullSourcePath === outputDirectoryPath &&
+            outputDirectoryPath.startsWith(sourceDirectoryPath)
+          ) {
+            sendLog(`跳过输出目录本身: ${fullSourcePath}`);
+            continue;
+          }
+
+          if (entry.isDirectory()) {
+            if (recursive) {
+              sendLog(`进入子目录: ${entryName}`);
+              await collectAndClassifyFilesLLM(fullSourcePath, relativePath);
+            } else {
+              sendLog(`跳过子目录（非递归模式）: ${entryName}`);
+            }
+          } else if (entry.isFile()) {
+            sendLog(`正在分析文件: ${relativePath}`);
+
+            // 使用 LLM 进行分类
+            const fileExtension = path.extname(entryName).toLowerCase();
+
+            const promptMessages = [
+              {
+                role: "system" as const,
+                content: `你是一个文件分类助手。根据文件名${
+                  fileExtension ? `（推断文件类型为 ${fileExtension}）` : ""
+                }和给定的分类列表，将文件分配到最合适的分类中。如果没有合适的分类，请回复"未分类"。只返回一个词：分类名称或"未分类"。注意分类使用中文。`,
+              },
+              {
+                role: "user" as const,
+                content: `文件名："${entryName}"。\n请从以下列表中选择最合适的分类：\n${confirmedCategories.join(
+                  "\n"
+                )}\n如果没有合适的分类，请回复"未分类"。`,
+              },
+            ];
+
+            const llmAssignedCategory = await getClassifyResultFromLLM(
+              finalApiKey,
+              promptMessages,
+              confirmedCategories,
+              finalModel,
+              finalBaseUrl
+            );
+
+            const assignedCategory =
+              llmAssignedCategory || unclassifiedFolderName;
+            const targetPath = path.join(
+              actualOutputDir,
+              assignedCategory,
+              entryName
+            );
+
+            // 添加到分类结果
+            classifications.push({
+              filePath: fullSourcePath,
+              fileName: entryName,
+              relativePath: relativePath,
+              assignedCategory: assignedCategory,
+              targetPath: targetPath,
+            });
+
+            // 更新统计
+            categorySummary[assignedCategory] =
+              (categorySummary[assignedCategory] || 0) + 1;
+
+            sendLog(`文件 "${relativePath}" 预分类为: "${assignedCategory}"`);
+          }
+        }
+      }
+
+      try {
+        await collectAndClassifyFilesLLM(sourceDirectoryPath);
+
+        const totalFiles = classifications.length;
+        sendLog(`LLM分类预览完成，共分析 ${totalFiles} 个文件`, "success");
+        sendStatus("LLM分类预览生成完成");
+
+        // 生成分类统计日志
+        Object.entries(categorySummary).forEach(([category, count]) => {
+          if (count > 0) {
+            sendLog(`${category}: ${count} 个文件`);
+          }
+        });
+
+        return {
+          success: true,
+          message: `成功生成LLM分类预览，共 ${totalFiles} 个文件`,
+          classifications: classifications,
+          categorySummary: categorySummary,
+          totalFiles: totalFiles,
+          outputDirectoryPath: actualOutputDir,
+        };
+      } catch (error: any) {
+        sendLog(`LLM分类预览过程中发生错误: ${error.message}`, "error");
+        sendStatus("LLM分类预览失败");
+        return {
+          success: false,
+          message: `LLM分类预览失败: ${error.message}`,
+          classifications: [],
+          categorySummary: {},
+          totalFiles: 0,
+        };
+      }
+    }
+  );
+  console.log(
+    "[IPCLLMHandlers] 'llm-organization-preview' IPC handler registered."
+  );
+}
+
+/**
+ * @function registerLLMOrganizationExecuteHandler
+ * @description 注册用于执行LLM文件整理的 IPC Handler。
+ */
+export function registerLLMOrganizationExecuteHandler(): void {
+  ipcMain.handle(
+    "llm-organization-execute",
+    async (event, options: LLMOrganizationExecuteOptions) => {
+      const { sourceDirectoryPath, outputDirectoryPath, classifications } =
+        options;
+
+      const sender = event.sender;
+
+      const sendLog = (
+        message: string,
+        type: "info" | "error" | "success" = "info"
+      ) => {
+        console.log(`[LLM整理执行] ${type.toUpperCase()}: ${message}`);
+        sender.send("organization-progress", {
+          type: "log",
+          message: message,
+          level: type,
+        });
+      };
+
+      const sendStatus = (message: string) => {
+        sender.send("organization-progress", { type: "status", message });
+      };
+
+      let processedFileCount = 0;
+      const sendFileProcessedUpdate = () => {
+        processedFileCount++;
+        sender.send("organization-progress", {
+          type: "fileProcessed",
+          count: processedFileCount,
+          message: "已处理",
+        });
+      };
+
+      sendLog(`开始执行LLM文件整理，源目录: ${sourceDirectoryPath}`);
+      sendLog(`将处理 ${classifications.length} 个文件`);
+      if (outputDirectoryPath) {
+        sendLog(`输出目录: ${outputDirectoryPath}`);
+      } else {
+        sendLog("将在源目录内进行整理");
+      }
+
+      // 记录原始目录结构
+      if (getShouldSaveDirectoryStructureLog()) {
+        try {
+          sendLog("正在记录原始目录结构...", "info");
+          const logFilePath = await recordOriginalDirectoryStructure(
+            sourceDirectoryPath,
+            outputDirectoryPath
+          );
+          if (logFilePath) {
+            sendLog(`原始目录结构已保存到: ${logFilePath}`, "success");
+          } else {
+            sendLog("记录原始目录结构失败，但整理操作将继续。", "error");
+          }
+        } catch (logError: any) {
+          sendLog(
+            `记录原始目录结构时发生错误: ${logError.message}，整理操作将继续。`,
+            "error"
+          );
+        }
+      }
+
+      sendStatus("正在执行LLM文件分类...");
+
+      try {
+        // 记录所有原始文件路径，用于后续清理空目录
+        const originalFilePaths = new Set<string>();
+        classifications.forEach((item) => {
+          originalFilePaths.add(path.dirname(item.filePath));
+        });
+
+        // 创建输出目录（如果需要）
+        const actualOutputDir = outputDirectoryPath || sourceDirectoryPath;
+        if (outputDirectoryPath && !fs.existsSync(outputDirectoryPath)) {
+          try {
+            fs.mkdirSync(outputDirectoryPath, { recursive: true });
+            sendLog(`创建输出目录: ${outputDirectoryPath}`, "success");
+          } catch (error: any) {
+            sendLog(`创建输出目录失败: ${error.message}`, "error");
+            return {
+              success: false,
+              message: `创建输出目录失败: ${error.message}`,
+            };
+          }
+        }
+
+        // 创建所需的分类目录
+        const requiredDirs = new Set<string>();
+        classifications.forEach((item) => {
+          const targetDir = path.dirname(item.targetPath);
+          requiredDirs.add(targetDir);
+        });
+
+        for (const dir of requiredDirs) {
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+            sendLog(
+              `创建目录: ${path.relative(actualOutputDir, dir)}`,
+              "success"
+            );
+          }
+        }
+
+        // 执行文件移动
+        for (const item of classifications) {
+          try {
+            // 检查源文件是否存在
+            if (!fs.existsSync(item.filePath)) {
+              sendLog(`源文件不存在，跳过: ${item.relativePath}`, "error");
+              continue;
+            }
+
+            // 处理目标文件名冲突
+            let targetPath = item.targetPath;
+            let counter = 1;
+            const originalName = path.parse(item.fileName).name;
+            const originalExt = path.parse(item.fileName).ext;
+
+            while (fs.existsSync(targetPath) && targetPath !== item.filePath) {
+              const newFileName = `${originalName}_${counter}${originalExt}`;
+              targetPath = path.join(
+                path.dirname(item.targetPath),
+                newFileName
+              );
+              counter++;
+            }
+
+            // 如果源路径和目标路径相同，跳过移动
+            if (item.filePath === targetPath) {
+              sendLog(`文件已在目标位置，跳过: ${item.relativePath}`, "info");
+              sendFileProcessedUpdate();
+              continue;
+            }
+
+            // 执行文件移动
+            fs.renameSync(item.filePath, targetPath);
+            const targetRelativePath = path.relative(
+              actualOutputDir,
+              targetPath
+            );
+            sendLog(
+              `移动文件: ${item.relativePath} -> ${targetRelativePath}`,
+              "success"
+            );
+            sendFileProcessedUpdate();
+          } catch (moveError: any) {
+            sendLog(
+              `移动文件失败: ${item.relativePath}. 错误: ${moveError.message}`,
+              "error"
+            );
+          }
+        }
+
+        // 清理空目录（仅在源目录内整理时）
+        if (!outputDirectoryPath) {
+          sendStatus("正在清理空目录...");
+          await cleanupEmptyDirectories(
+            sourceDirectoryPath,
+            originalFilePaths,
+            sendLog
+          );
+        }
+
+        sendStatus("LLM文件整理执行完成");
+        sendLog(
+          `LLM文件整理完成，共处理 ${processedFileCount} 个文件`,
+          "success"
+        );
+
+        return {
+          success: true,
+          message: `LLM文件整理执行成功，共处理 ${processedFileCount} 个文件`,
+        };
+      } catch (error: any) {
+        sendLog(`LLM文件整理执行过程中发生严重错误: ${error.message}`, "error");
+        sendStatus("LLM文件整理执行失败");
+        return {
+          success: false,
+          message: `LLM文件整理执行失败: ${error.message}`,
+        };
+      }
+    }
+  );
+  console.log(
+    "[IPCLLMHandlers] 'llm-organization-execute' IPC handler registered."
   );
 }

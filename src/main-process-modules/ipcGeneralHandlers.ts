@@ -11,13 +11,6 @@ import {
 // 新增：用于临时存储“保存目录结构日志”设置的变量
 let saveDirectoryStructureLogEnabled = true; // 默认为启用
 
-// 新增：用于临时存储LLM配置的变量
-let tempLLMConfig: LLMConfig = {
-  baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", // 默认使用阿里云DashScope
-  apiKey: "",
-  model: "qwen-plus-latest", // 默认使用通义千问Plus模型
-};
-
 /**
  * @function registerSelectDirectoryHandler
  * @description 注册用于处理选择目录请求的 IPC Handler。
@@ -103,23 +96,34 @@ export function registerLLMConfigHandlers(): void {
     "set-llm-config",
     async (_event, config: Partial<LLMConfig>) => {
       try {
-        // 更新配置，保留未提供的字段的原值
+        // 从配置文件读取当前配置
+        const currentConfig = loadConfig();
+
+        // 更新LLM配置，保留未提供的字段的原值
+        const updatedLLMConfig = { ...currentConfig.llmConfig };
         if (config.baseUrl !== undefined) {
-          tempLLMConfig.baseUrl = config.baseUrl;
+          updatedLLMConfig.baseUrl = config.baseUrl;
         }
         if (config.apiKey !== undefined) {
-          tempLLMConfig.apiKey = config.apiKey;
+          updatedLLMConfig.apiKey = config.apiKey;
         }
         if (config.model !== undefined) {
-          tempLLMConfig.model = config.model;
+          updatedLLMConfig.model = config.model;
         }
 
-        console.log("[IpcGeneralHandlers] LLM配置已更新:", {
-          baseUrl: tempLLMConfig.baseUrl,
-          apiKeyLength: tempLLMConfig.apiKey?.length || 0,
-          model: tempLLMConfig.model,
-        });
-        return { success: true };
+        // 保存到配置文件
+        const success = updateConfig({ llmConfig: updatedLLMConfig });
+
+        if (success) {
+          console.log("[IpcGeneralHandlers] LLM配置已更新并保存:", {
+            baseUrl: updatedLLMConfig.baseUrl,
+            apiKeyLength: updatedLLMConfig.apiKey?.length || 0,
+            model: updatedLLMConfig.model,
+          });
+          return { success: true };
+        } else {
+          throw new Error("保存配置文件失败");
+        }
       } catch (error: any) {
         console.error("[IpcGeneralHandlers] 设置LLM配置时出错:", error);
         return { success: false, error: error.message };
@@ -130,8 +134,9 @@ export function registerLLMConfigHandlers(): void {
   // 处理获取LLM配置的请求
   ipcMain.handle("get-llm-config", async () => {
     try {
+      const config = loadConfig();
       console.log("[IpcGeneralHandlers] LLM配置已获取");
-      return tempLLMConfig;
+      return config.llmConfig;
     } catch (error: any) {
       console.error("[IpcGeneralHandlers] 获取LLM配置时出错:", error);
       return null;
@@ -149,7 +154,8 @@ export function registerLLMConfigHandlers(): void {
  * @returns {LLMConfig} 当前的LLM配置。
  */
 export function getLLMConfig(): LLMConfig {
-  return tempLLMConfig;
+  const config = loadConfig();
+  return config.llmConfig;
 }
 
 // 注意：确保在你的主进程初始化代码中 (例如 main.ts) 调用所有这些注册函数：

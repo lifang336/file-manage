@@ -46,6 +46,20 @@ export async function getSuggestionsFromLLM(
     `[LLMService] Calling LLM API for category suggestions... (Model: ${model}, BaseURL: ${baseUrl})`
   );
 
+  // 添加详细的请求调试日志
+  console.log(`[LLMService DEBUG] Request details for suggestions:`);
+  console.log(`[LLMService DEBUG] - Model: ${model}`);
+  console.log(`[LLMService DEBUG] - BaseURL: ${baseUrl}`);
+  console.log(`[LLMService DEBUG] - API Key length: ${apiKey?.length || 0}`);
+  console.log(`[LLMService DEBUG] - Messages count: ${promptMessages.length}`);
+  promptMessages.forEach((msg, index) => {
+    console.log(
+      `[LLMService DEBUG] - Message ${index} (${
+        msg.role
+      }): ${msg.content.substring(0, 200)}...`
+    );
+  });
+
   try {
     const completion = (await openai.chat.completions.create({
       model: model,
@@ -60,6 +74,9 @@ export async function getSuggestionsFromLLM(
         0,
         200
       )}...`
+    );
+    console.log(
+      `[LLMService DEBUG] Full raw response for suggestions: ${responseContent}`
     );
 
     if (!responseContent) {
@@ -154,6 +171,22 @@ export async function getClassifyResultFromLLM(
     `[LLMService] Calling LLM API for classifying file: ${fileNameForLog}... (Model: ${model}, BaseURL: ${baseUrl})`
   );
 
+  // 添加详细的请求调试日志
+  console.log(`[LLMService DEBUG] Request details for file classification:`);
+  console.log(`[LLMService DEBUG] - File: ${fileNameForLog}`);
+  console.log(`[LLMService DEBUG] - Model: ${model}`);
+  console.log(`[LLMService DEBUG] - BaseURL: ${baseUrl}`);
+  console.log(`[LLMService DEBUG] - API Key length: ${apiKey?.length || 0}`);
+  console.log(
+    `[LLMService DEBUG] - Available categories: ${JSON.stringify(categories)}`
+  );
+  console.log(`[LLMService DEBUG] - Messages count: ${promptMessages.length}`);
+  promptMessages.forEach((msg, index) => {
+    console.log(
+      `[LLMService DEBUG] - Message ${index} (${msg.role}): ${msg.content}`
+    );
+  });
+
   try {
     const completion = (await openai.chat.completions.create({
       model: model,
@@ -166,14 +199,49 @@ export async function getClassifyResultFromLLM(
     console.log(
       `[LLMService] Raw classification response for "${fileNameForLog}": "${assignedCategory}"`
     );
+    console.log(
+      `[LLMService DEBUG] Full completion object: ${JSON.stringify(
+        completion,
+        null,
+        2
+      )}`
+    );
+
+    // 添加分类验证的调试日志
+    console.log(
+      `[LLMService DEBUG] Category validation for "${fileNameForLog}":`
+    );
+    console.log(
+      `[LLMService DEBUG] - Assigned category: "${assignedCategory}"`
+    );
+    console.log(
+      `[LLMService DEBUG] - Available categories: ${JSON.stringify(categories)}`
+    );
+    console.log(
+      `[LLMService DEBUG] - Category in list: ${
+        assignedCategory ? categories.includes(assignedCategory) : false
+      }`
+    );
 
     if (assignedCategory && categories.includes(assignedCategory)) {
+      console.log(
+        `[LLMService DEBUG] Category "${assignedCategory}" is valid, returning it.`
+      );
       return assignedCategory;
-    } else if (assignedCategory === "Uncategorized") {
+    } else if (
+      assignedCategory === "未分类" ||
+      assignedCategory === "Uncategorized"
+    ) {
+      console.log(
+        `[LLMService DEBUG] LLM explicitly returned unclassified for "${fileNameForLog}".`
+      );
       return null; // 代表 LLM 明确表示未分类
     } else {
       console.log(
         `[LLMService] LLM returned invalid or unlisted category for "${fileNameForLog}": "${assignedCategory}". Treating as unclassified.`
+      );
+      console.log(
+        `[LLMService DEBUG] Treating as unclassified due to invalid category.`
       );
       return null; // 其他意外情况或不在列表中的分类也视为未分类
     }

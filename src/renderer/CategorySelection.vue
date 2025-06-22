@@ -38,13 +38,15 @@
         />
         <button @click="addManualCategory" class="add-btn">添加分类</button>
       </div>
-      <button
-        @click="confirmSelection"
-        class="confirm-button"
-        :disabled="selectedCategories.length === 0"
-      >
-        确认选定分类并准备整理 ({{ selectedCategories.length }} 个)
-      </button>
+      <div class="selection-summary">
+        <p class="selected-count">
+          已选择 {{ selectedCategories.length }} 个分类：
+          <span class="category-list">{{ selectedCategories.join(", ") }}</span>
+        </p>
+        <p class="info-text">
+          选择完成后，请点击下方的"开始整理"按钮进行文件分类。
+        </p>
+      </div>
     </div>
   </div>
 </template>
@@ -99,6 +101,15 @@ const selectedCategories = computed(() => {
     .map((s) => s.name.trim());
 });
 
+// 监听选择变化，自动通知父组件
+watch(
+  selectedCategories,
+  (newCategories) => {
+    emit("categories-confirmed", newCategories);
+  },
+  { deep: true }
+);
+
 // 移除一个建议项
 const removeSuggestion = (index: number) => {
   localSuggestions.value.splice(index, 1);
@@ -129,17 +140,6 @@ const addManualCategory = () => {
     newCategoryName.value = ""; // 清空输入框
   } else {
     alert("请输入有效的分类名称。");
-  }
-};
-
-// 用户确认选择
-const confirmSelection = () => {
-  if (selectedCategories.value.length > 0) {
-    emit("categories-confirmed", selectedCategories.value);
-    // 可以在这里添加一些用户反馈，例如一个提示或日志
-    console.log("用户确认的分类:", selectedCategories.value);
-  } else {
-    alert("请至少选择一个分类。");
   }
 };
 
@@ -232,26 +232,29 @@ onMounted(() => {
   border-top: 1px dashed #ccc;
 }
 
-.confirm-button {
-  background-color: #007bff;
-  color: white;
-  padding: 12px 20px;
-  font-size: 16px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+.selection-summary {
   margin-top: 15px;
-  width: 100%;
-  transition: background-color 0.3s ease;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
 }
 
-.confirm-button:hover {
-  background-color: #0056b3;
+.selected-count {
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 8px;
 }
 
-.confirm-button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
+.category-list {
+  color: #007bff;
+  font-weight: normal;
+}
+
+.info-text {
+  font-size: 13px;
+  color: #6c757d;
+  margin: 0;
 }
 
 p {

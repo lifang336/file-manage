@@ -224,29 +224,14 @@
         </div>
 
         <div class="execution-options">
-          <div
-            class="execution-card simulate-card"
-            @click="executeWorkflow(true)"
-          >
-            <div class="execution-icon">🔍</div>
-            <div class="execution-content">
-              <h4>模拟运行</h4>
-              <p>预览整理结果，不实际移动文件</p>
-              <div class="execution-features">
-                <span class="feature">✅ 安全预览</span>
-                <span class="feature">📊 生成报告</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="execution-card real-card" @click="executeWorkflow(false)">
+          <div class="execution-card real-card" @click="executeWorkflow()">
             <div class="execution-icon">⚡</div>
             <div class="execution-content">
-              <h4>立即执行</h4>
-              <p>开始实际的文件整理操作</p>
+              <h4>开始整理</h4>
+              <p>开始文件整理操作</p>
               <div class="execution-features">
                 <span class="feature">🚀 快速执行</span>
-                <span class="feature">📁 实际整理</span>
+                <span class="feature">📁 智能整理</span>
               </div>
             </div>
           </div>
@@ -342,12 +327,11 @@ const selectMethod = (method: "ai" | "manual") => {
   selectedMethod.value = method;
 };
 
-const executeWorkflow = (isDryRun: boolean) => {
+const executeWorkflow = () => {
   const workflowConfig = {
     sourceDirectory: sourceDirectory.value,
     outputDirectory: outputDirectory.value,
     method: selectedMethod.value,
-    isDryRun,
     ...config,
   };
 

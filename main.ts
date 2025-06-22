@@ -9,10 +9,15 @@ import {
   registerLogSettingsHandlers, // 新增：导入日志设置处理器注册函数
   registerLLMConfigHandlers, // 新增：导入LLM配置处理器注册函数
 } from "./src/main-process-modules/ipcGeneralHandlers";
+import { loadConfig } from "./src/main-process-modules/configService";
 import { registerManualOrganizationHandler } from "./src/main-process-modules/manualOrganizationService";
 import {
   registerGetLLMCategorySuggestionsHandler,
   registerStartLLMOrganizationHandler,
+  registerQuickOrganizationPreviewHandler,
+  registerQuickOrganizationExecuteHandler,
+  registerLLMOrganizationPreviewHandler,
+  registerLLMOrganizationExecuteHandler,
 } from "./src/main-process-modules/ipcLLMHandlers";
 import {
   ClassificationRule,
@@ -29,6 +34,16 @@ import {
 
 // Electron 应用就绪后执行
 app.whenReady().then(() => {
+  // 初始化配置文件
+  const config = loadConfig();
+  console.log("[Main] 配置已加载:", {
+    hasApiKey: !!config.llmConfig.apiKey,
+    baseUrl: config.llmConfig.baseUrl,
+    model: config.llmConfig.model,
+    unclassifiedFolderName: config.unclassifiedFolderName,
+    recursive: config.recursive,
+  });
+
   createWindow();
   registerSelectDirectoryHandler();
 
@@ -37,6 +52,10 @@ app.whenReady().then(() => {
   registerManualOrganizationHandler();
   registerGetLLMCategorySuggestionsHandler();
   registerStartLLMOrganizationHandler();
+  registerQuickOrganizationPreviewHandler(); // 新增：注册快速分类预览处理器
+  registerQuickOrganizationExecuteHandler(); // 新增：注册快速分类执行处理器
+  registerLLMOrganizationPreviewHandler(); // 新增：注册LLM文件整理预览处理器
+  registerLLMOrganizationExecuteHandler(); // 新增：注册LLM文件整理执行处理器
 
   app.on("activate", () => {
     // 在 macOS 系统上，当单击 dock 图标并且没有其他窗口打开时，
