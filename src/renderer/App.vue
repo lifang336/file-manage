@@ -29,6 +29,7 @@
           :organization-log-llm="organizationLog"
           :llm-api-key-prop="llmApiKey"
           :llm-category-suggestions-from-app="llmCategorySuggestions"
+          @select-source-directory="handleSelectSourceDirectory"
           @update:llm-api-key="llmApiKey = $event"
           @get-llm-suggestions-app="handleGetLLMSuggestions"
           @categories-confirmed-app="handleCategoriesConfirmed"
