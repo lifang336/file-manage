@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2021", // 指定 ECMAScript 目标版本
+    "module": "commonjs", // 指定模块代码生成: 'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', 'es2020', or 'ESNext'
+    "strict": true, // 启用所有严格类型检查选项
+    "esModuleInterop": true, // 通过为所有导入创建命名空间对象，实现 CommonJS 和 ES 模块之间的互操作性
+    "skipLibCheck": true, // 跳过声明文件的类型检查
+    "forceConsistentCasingInFileNames": true, // 禁止对同一文件使用大小写不一致的引用
+    "resolveJsonModule": true, // 允许导入 .json 文件
+    "outDir": "./dist", // 将输出结构重定向到目录
+    "rootDir": "./", // 指定输入文件的根目录。用于控制输出目录结构 --outDir
+    "baseUrl": "./", // 解析非相对模块名称的基准目录
+    "paths": {
+      "*": ["node_modules/*"]
+    },
+    "types": ["node"] // 确保 Node.js 类型被加载，Electron 类型应自动被发现
+  },
+  "include": [
+    "main.ts", // 包含主进程文件
+    "preload.ts", // 包含预加载脚本文件
+    "src/**/*.ts" // 包含 src 目录下的所有 .ts 文件 (为未来渲染进程代码做准备)
+  ],
+  "exclude": ["node_modules", "dist"]
+}

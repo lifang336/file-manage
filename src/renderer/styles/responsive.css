@@ -1,0 +1,402 @@
+/* 响应式设计样式 */
+
+/* 基础响应式断点 */
+:root {
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 80px;
+  --content-padding: 30px;
+  --card-gap: 20px;
+  --border-radius: 12px;
+}
+
+/* 大屏幕 (1400px+) */
+@media (min-width: 1400px) {
+  :root {
+    --sidebar-width: 320px;
+    --content-padding: 40px;
+    --card-gap: 24px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  
+  .config-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .action-cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* 中等屏幕 (1200px - 1399px) */
+@media (min-width: 1200px) and (max-width: 1399px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .config-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .action-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 小屏幕 (1000px - 1199px) */
+@media (min-width: 1000px) and (max-width: 1199px) {
+  :root {
+    --sidebar-width: 240px;
+    --content-padding: 24px;
+    --card-gap: 16px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .action-cards {
+    grid-template-columns: 1fr;
+  }
+  
+  .welcome-title {
+    font-size: 28px !important;
+  }
+  
+  .section-title {
+    font-size: 20px !important;
+  }
+}
+
+/* 移动端适配 (虽然是桌面应用，但支持小窗口) */
+@media (max-width: 999px) {
+  :root {
+    --content-padding: 16px;
+    --card-gap: 12px;
+  }
+  
+  .modern-app {
+    flex-direction: column;
+  }
+  
+  .modern-sidebar {
+    width: 100% !important;
+    height: auto;
+    position: relative;
+  }
+  
+  .modern-sidebar.collapsed {
+    width: 100% !important;
+  }
+  
+  .sidebar-nav {
+    padding: 10px 0;
+  }
+  
+  .nav-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 20px;
+  }
+  
+  .nav-item {
+    flex: 1;
+    min-width: 120px;
+    margin-bottom: 0;
+  }
+  
+  .nav-link {
+    margin-right: 0;
+    border-radius: 8px;
+    justify-content: center;
+    text-align: center;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 8px;
+  }
+  
+  .nav-text {
+    font-size: 12px;
+  }
+  
+  .main-content {
+    padding: 16px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .stat-card {
+    padding: 16px;
+  }
+  
+  .stat-icon {
+    font-size: 24px !important;
+    width: 40px !important;
+    height: 40px !important;
+  }
+  
+  .stat-value {
+    font-size: 20px !important;
+  }
+  
+  .config-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .action-cards {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .action-card {
+    padding: 16px;
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .action-icon {
+    font-size: 24px !important;
+    width: 40px !important;
+    height: 40px !important;
+  }
+  
+  .welcome-title {
+    font-size: 24px !important;
+  }
+  
+  .welcome-subtitle {
+    font-size: 14px !important;
+  }
+  
+  .section-title {
+    font-size: 18px !important;
+  }
+  
+  .directory-cards {
+    grid-template-columns: 1fr;
+  }
+  
+  .method-cards {
+    grid-template-columns: 1fr;
+  }
+  
+  .execution-options {
+    grid-template-columns: 1fr;
+  }
+  
+  .step-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .back-btn,
+  .next-btn {
+    width: 100%;
+  }
+}
+
+/* 超小屏幕适配 */
+@media (max-width: 600px) {
+  :root {
+    --content-padding: 12px;
+  }
+  
+  .dashboard-view,
+  .workflow-view,
+  .config-panel {
+    padding: 12px;
+  }
+  
+  .panel-header {
+    margin-bottom: 20px;
+  }
+  
+  .welcome-title {
+    font-size: 20px !important;
+  }
+  
+  .panel-header h2 {
+    font-size: 20px !important;
+  }
+  
+  .card-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 8px;
+  }
+  
+  .card-icon {
+    font-size: 24px !important;
+    width: 40px !important;
+    height: 40px !important;
+  }
+  
+  .progress-indicator {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  
+  .progress-step {
+    min-width: 80px;
+  }
+  
+  .step-number {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 14px;
+  }
+  
+  .step-label {
+    font-size: 10px !important;
+  }
+}
+
+/* 高度适配 */
+@media (max-height: 800px) {
+  .sidebar-nav {
+    padding: 10px 0;
+  }
+  
+  .nav-section {
+    margin-bottom: 20px;
+  }
+  
+  .dashboard-view {
+    padding: 20px;
+  }
+  
+  .welcome-section {
+    margin-bottom: 30px;
+  }
+  
+  .stats-grid {
+    margin-bottom: 30px;
+  }
+  
+  .quick-actions {
+    margin-bottom: 30px;
+  }
+}
+
+@media (max-height: 700px) {
+  .sidebar-header {
+    padding: 15px;
+    min-height: 60px;
+  }
+  
+  .sidebar-footer {
+    padding: 15px;
+  }
+  
+  .app-title {
+    font-size: 16px !important;
+  }
+  
+  .logo-icon {
+    font-size: 24px !important;
+    width: 32px !important;
+    height: 32px !important;
+  }
+  
+  .nav-link {
+    padding: 8px 20px;
+  }
+  
+  .nav-icon {
+    font-size: 18px;
+  }
+  
+  .nav-text {
+    font-size: 13px;
+  }
+}
+
+/* 容器查询支持 (现代浏览器) */
+@container (max-width: 600px) {
+  .stat-card {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .action-card {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+/* 打印样式 */
+@media print {
+  .modern-sidebar {
+    display: none;
+  }
+  
+  .main-content {
+    margin-left: 0;
+    padding: 20px;
+  }
+  
+  .hover-lift,
+  .action-card,
+  .stat-card {
+    box-shadow: none !important;
+    border: 1px solid #ddd;
+  }
+  
+  .gradient-animation,
+  .particles-bg {
+    background: white !important;
+  }
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  .stat-card,
+  .action-card,
+  .config-card {
+    border: 2px solid #000;
+  }
+  
+  .modern-sidebar {
+    border-right: 2px solid #000;
+  }
+  
+  .nav-link:hover {
+    background: #000 !important;
+    color: #fff !important;
+  }
+}
+
+/* 减少动画模式 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  .hover-lift:hover {
+    transform: none !important;
+  }
+  
+  .stat-card:hover {
+    transform: none !important;
+  }
+  
+  .action-card:hover {
+    transform: none !important;
+  }
+}
