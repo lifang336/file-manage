@@ -75,7 +75,7 @@ const emit = defineEmits<{
 const isCollapsed = ref(false);
 
 const mainNavItems: NavItem[] = [
-  { id: "manual", label: "规则分类", icon: "📋" },
+  { id: "manual", label: "快速分类", icon: "⚡" },
   { id: "ai", label: "AI智能分类", icon: "🤖" },
 ];
 

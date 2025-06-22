@@ -6,23 +6,15 @@
     <!-- 主内容区域 -->
     <div class="main-content">
       <Transition name="page-transition" mode="out-in">
-        <!-- 规则分类 -->
+        <!-- 快速分类 -->
         <ManualModeView
           v-if="currentView === 'manual'"
           key="manual"
           :source-directory-path="sourceDirectoryPath"
-          :output-directory-path="outputDirectoryPath"
-          :classification-rules="classificationRules"
-          :new-rule="newRule"
-          :unclassified-folder-name="unclassifiedFolderName"
-          :recursive="recursive"
           :organization-progress="organizationProgress"
           :organization-log="organizationLog"
           @select-source-directory="handleSelectSourceDirectory"
-          @select-output-directory="handleSelectOutputDirectory"
-          @add-rule="addRule"
-          @remove-rule="removeRule"
-          @start-manual-organization="() => startManualOrganization(false)"
+          @start-manual-organization="handleStartQuickOrganization"
         />
 
         <!-- AI智能分类 -->
@@ -127,24 +119,7 @@ const organizationProgress = ref<string | null>(null);
 const organizationLog = ref<string[]>([]);
 const llmApiKey = ref<string>(""); // API Key 现在由 App.vue 管理，并通过 SettingsView 设置
 
-// 手动模式特定状态 (仍在此处定义，并通过 props 传递给 ManualModeView)
-const classificationRules = ref<ClassificationRule[]>([
-  {
-    categoryName: "图片",
-    matchType: "extension",
-    matchValue: ".jpg,.jpeg,.png,.gif,.bmp,.tiff,.webp",
-  },
-  {
-    categoryName: "文档",
-    matchType: "extension",
-    matchValue: ".doc,.docx,.pdf,.txt,.md,.ppt,.pptx,.xls,.xlsx",
-  },
-]);
-const newRule = reactive<ClassificationRule>({
-  categoryName: "",
-  matchType: "extension",
-  matchValue: "",
-});
+// 快速分类不需要复杂的规则配置
 
 // LLM 模式特定状态 (部分在此定义，通过 props/emits 与 LLMModeView 交互)
 const llmCategorySuggestions = ref<string[]>([]); // 这个会由 LLMModeView 内部获取和管理，但 App.vue 可能需要知道结果
@@ -206,106 +181,37 @@ const handleSelectSourceDirectory = async () => {
   }
 };
 
-const handleSelectOutputDirectory = async () => {
-  try {
-    // @ts-ignore
-    const paths = await window.electronAPI.selectDirectory();
-    if (paths && paths.length > 0) {
-      outputDirectoryPath.value = paths;
-      organizationLog.value.unshift(
-        `[INFO] 已选择输出目录: ${outputDirectoryPath.value}`
-      );
-    } else {
-      organizationLog.value.unshift(
-        "[INFO] 用户取消选择输出目录，将使用源目录。"
-      );
-      outputDirectoryPath.value = null;
-    }
-  } catch (error: any) {
-    outputDirectoryPath.value = "选择目录失败";
-    organizationLog.value.unshift(
-      `[ERROR] 选择输出目录失败: ${error.message || error}`
-    );
-  }
-};
-
-// 手动模式方法 (由 ManualModeView emit 调用)
-const addRule = (rule: ClassificationRule) => {
-  // newRule 现在由 ManualModeView 内部管理和 emit
-  if (!rule.categoryName.trim() || !rule.matchValue.trim()) {
-    organizationLog.value.unshift(
-      "[WARN] 新规则的分类名称和匹配内容不能为空。"
-    );
-    alert("新规则的分类名称和匹配内容不能为空。");
-    return;
-  }
-  classificationRules.value.push({ ...rule });
-  organizationLog.value.unshift(
-    `[INFO] 添加规则: ${rule.categoryName} (${rule.matchType}: ${rule.matchValue})`
-  );
-};
-
-const removeRule = (index: number) => {
-  const removedRule = classificationRules.value.splice(index, 1);
-  organizationLog.value.unshift(
-    `[INFO] 删除规则: ${removedRule[0]?.categoryName}`
-  );
-};
-
-const startManualOrganization = async (isDryRun: boolean) => {
+// 快速分类方法
+const handleStartQuickOrganization = async (categories: string[]) => {
   if (!sourceDirectoryPath.value) {
     alert("请先选择源文件目录！");
-    organizationLog.value.unshift(
-      `[ERROR] 手动${isDryRun ? "模拟运行" : "整理"}失败：未选择源文件目录。`
-    );
+    organizationLog.value.unshift("[ERROR] 快速分类失败：未选择源文件目录。");
     return;
   }
-  if (classificationRules.value.length === 0) {
-    alert("请至少定义一条手动分类规则！");
-    organizationLog.value.unshift(
-      `[ERROR] 手动${isDryRun ? "模拟运行" : "整理"}失败：未定义手动分类规则。`
-    );
+  if (categories.length === 0) {
+    alert("请至少添加一个分类名称！");
+    organizationLog.value.unshift("[ERROR] 快速分类失败：未添加分类名称。");
     return;
   }
 
-  // organizationLog.value = []; // 清空旧日志 - 日志现在是全局的，不清空
-  organizationProgress.value = `手动${isDryRun ? "模拟运行" : "整理"}准备中...`;
-  organizationLog.value.unshift(
-    `[INFO] 开始手动${isDryRun ? "模拟运行" : "文件整理"}过程...`
-  );
-  logCommonOrganizationParams(isDryRun, "手动");
-  organizationLog.value.unshift(
-    `[INFO] 手动分类规则数量: ${classificationRules.value.length}`
-  );
-  classificationRules.value.forEach((r, i) => {
-    organizationLog.value.unshift(
-      `[INFO]   规则 ${i + 1}: "${r.categoryName}" (${r.matchType}: ${
-        r.matchValue
-      })`
-    );
-  });
+  organizationProgress.value = "快速分类准备中...";
+  organizationLog.value.unshift("[INFO] 开始快速分类过程...");
+  organizationLog.value.unshift(`[INFO] 源目录: ${sourceDirectoryPath.value}`);
+  organizationLog.value.unshift(`[INFO] 分类名称: ${categories.join(", ")}`);
 
   try {
     // @ts-ignore
-    await window.electronAPI.startManualOrganization({
+    await window.electronAPI.startQuickOrganization({
       sourceDirectoryPath: sourceDirectoryPath.value,
-      outputDirectoryPath: outputDirectoryPath.value,
-      classificationRules: JSON.parse(
-        JSON.stringify(classificationRules.value)
-      ),
+      categories: categories,
       unclassifiedFolderName: unclassifiedFolderName.value,
       recursive: recursive.value,
-      isDryRun: isDryRun,
     });
   } catch (error: any) {
     organizationLog.value.unshift(
-      `[ERROR] 手动${isDryRun ? "模拟运行" : "整理"}启动失败: ${
-        error.message || error
-      }`
+      `[ERROR] 快速分类启动失败: ${error.message || error}`
     );
-    organizationProgress.value = `手动${
-      isDryRun ? "模拟运行" : "整理"
-    }启动失败: ${error.message || error}`;
+    organizationProgress.value = `快速分类启动失败: ${error.message || error}`;
   }
 };
 
