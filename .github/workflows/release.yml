@@ -48,6 +48,7 @@ jobs:
         run: pnpm install
 
       - name: 获取版本号并更新package.json
+        shell: bash
         run: |
           # 从git tag获取版本号
           VERSION=${GITHUB_REF#refs/tags/v}
@@ -72,6 +73,7 @@ jobs:
 
       - name: 清理磁盘挂载和临时文件 (macOS)
         if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
           echo "=== 清理磁盘挂载 ==="
           # 列出当前挂载的磁盘
@@ -104,6 +106,7 @@ jobs:
 
       - name: 打包应用 (macOS)
         if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
           # 创建构建脚本
           cat > build_mac.sh << 'EOF'
@@ -174,6 +177,7 @@ jobs:
 
       - name: 列出构建产物 (macOS)
         if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
           echo "=== 构建产物列表 ==="
           ls -la release/
@@ -195,6 +199,7 @@ jobs:
 
       - name: 列出构建产物 (Windows)
         if: matrix.os == 'windows-latest'
+        shell: bash
         run: |
           echo "=== 构建产物列表 ==="
           ls -la release/
@@ -225,6 +230,7 @@ jobs:
         uses: actions/download-artifact@v4
 
       - name: 列出下载的文件
+        shell: bash
         run: |
           echo "=== 下载的构建产物 ==="
           find . -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.yml" | sort
@@ -233,6 +239,7 @@ jobs:
 
       - name: 获取版本号
         id: get_version
+        shell: bash
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: 创建 Release
