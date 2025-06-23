@@ -5,7 +5,7 @@ import path from "path";
 // https://vitejs.dev/config/
 export default defineConfig({
   // 解决 Electron 环境下路径问题
-  base: "/", // 开发模式下，资源应该从根路径提供
+  base: "./", // 使用相对路径，适用于 Electron 打包后的环境
   plugins: [vue()],
   resolve: {
     alias: {
@@ -14,6 +14,7 @@ export default defineConfig({
   },
   build: {
     outDir: "dist/renderer", // 指定渲染进程的输出目录
+    assetsDir: "assets", // 确保资源文件在 assets 目录下
     rollupOptions: {
       // 确保外部化处理那些你不想打包进库的依赖
       external: ["electron"],

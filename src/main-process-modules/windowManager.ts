@@ -59,11 +59,12 @@ export function createWindow(): BrowserWindow {
     // 打开开发者工具
     mainWindow.webContents.openDevTools();
   } else {
-    // 在生产环境中，index.html 通常位于 preload.js 和 main.js 编译输出目录下的 renderer 子目录
-    // 例如 dist/electron/renderer/index.html
-    // __dirname 指向 dist/electron (main.js 所在目录)
-    const prodFile = path.join(__dirname, "renderer/index.html");
+    // 在生产环境中，index.html 位于 dist/renderer/index.html
+    // __dirname 在编译后指向 dist/src/main-process-modules/
+    // 需要向上两级目录到 dist/，然后进入 renderer/ 目录
+    const prodFile = path.join(__dirname, "../../renderer/index.html");
     console.log(`[WindowManager] Loading file for production: ${prodFile}`);
+    console.log(`[WindowManager] __dirname: ${__dirname}`);
     mainWindow.loadFile(prodFile);
   }
 

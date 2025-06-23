@@ -15,11 +15,22 @@
     "dist:mac": "pnpm build && electron-builder --mac",
     "dist:win": "pnpm build && electron-builder --win",
     "dist:all": "pnpm build && electron-builder --mac --win",
+    "release": "pnpm build && electron-builder --publish=always",
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "version:major": "npm version major",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "electron",
+    "file-management",
+    "ai",
+    "vibe-coding",
+    "augment",
+    "roo-code"
+  ],
+  "author": "AI Generated Project",
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.0.3",
     "@vitejs/plugin-vue": "^5.2.4",
@@ -46,6 +57,11 @@
     "productName": "智能文件管理器",
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "lifang336",
+      "repo": "file-manage"
     },
     "files": [
       "dist/**/*",
