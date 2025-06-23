@@ -81,7 +81,7 @@
       "category": "public.app-category.productivity",
       "target": [
         {
-          "target": "zip",
+          "target": "dmg",
           "arch": [
             "x64",
             "arm64"
@@ -119,7 +119,25 @@
     "dmg": {
       "title": "智能文件管理器",
       "format": "UDZO",
-      "writeUpdateInfo": false
+      "writeUpdateInfo": false,
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "internetEnabled": false
     }
   }
 }

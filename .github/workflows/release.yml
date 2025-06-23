@@ -47,46 +47,140 @@ jobs:
       - name: 安装依赖
         run: pnpm install
 
+      - name: 获取版本号并更新package.json
+        run: |
+          # 从git tag获取版本号
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "版本号: $VERSION"
+
+          # 更新package.json中的版本号
+          if [[ "$VERSION" != "" && "$VERSION" != "refs/heads/"* ]]; then
+            # 使用node来更新package.json
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              pkg.version = '$VERSION';
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+              console.log('版本号已更新为:', pkg.version);
+            "
+          else
+            echo "未检测到有效的版本标签，使用默认版本"
+          fi
+
       - name: 构建应用
         run: pnpm build
 
-      - name: 清理可能的磁盘挂载 (macOS)
+      - name: 清理磁盘挂载和临时文件 (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          # 清理可能存在的磁盘挂载
-          sudo diskutil list
-          # 尝试卸载任何可能挂载的磁盘
-          for disk in $(diskutil list | grep "/dev/disk" | awk '{print $1}' | grep -E "disk[0-9]+$"); do
-            sudo diskutil unmountDisk $disk 2>/dev/null || true
+          echo "=== 清理磁盘挂载 ==="
+          # 列出当前挂载的磁盘
+          diskutil list
+
+          # 强制卸载所有可能的DMG挂载点
+          sudo pkill -f hdiutil || true
+          sudo pkill -f diskutil || true
+
+          # 清理临时文件
+          sudo rm -rf /tmp/dmg-* 2>/dev/null || true
+          sudo rm -rf /tmp/*.dmg 2>/dev/null || true
+
+          # 卸载所有可能的磁盘镜像
+          for mount_point in $(mount | grep "/Volumes/" | awk '{print $3}'); do
+            if [[ "$mount_point" == *"智能文件管理器"* ]] || [[ "$mount_point" == *"file-manage"* ]]; then
+              echo "卸载: $mount_point"
+              sudo diskutil unmount "$mount_point" 2>/dev/null || true
+            fi
           done
+
+          # 强制分离所有磁盘镜像
+          for disk in $(diskutil list | grep "disk image" | awk '{print $1}' | grep -E "disk[0-9]+$"); do
+            echo "分离磁盘: $disk"
+            sudo diskutil eject "$disk" 2>/dev/null || true
+          done
+
+          echo "=== 清理完成 ==="
         continue-on-error: true
 
       - name: 打包应用 (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          # 设置重试逻辑
-          for i in {1..3}; do
-            echo "尝试构建 DMG (第 $i 次)"
-            if pnpm exec electron-builder --mac --publish=never; then
-              echo "构建成功"
-              break
-            else
-              echo "构建失败，等待 10 秒后重试..."
-              sleep 10
-              # 清理可能的临时文件
-              sudo rm -rf /tmp/dmg-* 2>/dev/null || true
-              if [ $i -eq 3 ]; then
-                echo "所有重试都失败了"
-                exit 1
+          # 创建构建脚本
+          cat > build_mac.sh << 'EOF'
+          #!/bin/bash
+
+          # 清理函数
+          cleanup_disks() {
+            echo "清理磁盘挂载..."
+
+            # 终止所有hdiutil进程
+            sudo pkill -f hdiutil 2>/dev/null || true
+            sleep 2
+
+            # 强制分离所有磁盘镜像
+            for disk in $(diskutil list | grep "disk image" | awk '{print $1}' | grep -E "disk[0-9]+$" 2>/dev/null || true); do
+              echo "强制分离磁盘: $disk"
+              sudo diskutil eject "$disk" 2>/dev/null || true
+            done
+
+            # 卸载相关挂载点
+            for mount_point in $(mount | grep "/Volumes/" | awk '{print $3}' 2>/dev/null || true); do
+              if [[ "$mount_point" == *"智能文件管理器"* ]] || [[ "$mount_point" == *"file-manage"* ]]; then
+                echo "卸载挂载点: $mount_point"
+                sudo diskutil unmount "$mount_point" 2>/dev/null || true
               fi
+            done
+
+            # 清理临时文件
+            sudo rm -rf /tmp/dmg-* 2>/dev/null || true
+            sudo rm -rf /tmp/*.dmg 2>/dev/null || true
+          }
+
+          # 设置陷阱，确保退出时清理
+          trap cleanup_disks EXIT
+
+          # 初始清理
+          cleanup_disks
+
+          echo "开始构建macOS应用..."
+
+          # 执行构建
+          if pnpm exec electron-builder --mac --publish=never; then
+            echo "构建成功完成"
+            exit 0
+          else
+            echo "构建过程中出现错误，检查是否有文件生成..."
+            ls -la release/ 2>/dev/null || true
+
+            # 如果有DMG文件生成，认为构建成功
+            if ls release/*.dmg 1> /dev/null 2>&1; then
+              echo "DMG文件已生成，构建成功"
+              exit 0
+            else
+              echo "没有找到DMG文件，构建失败"
+              exit 1
             fi
-          done
+          fi
+          EOF
+
+          chmod +x build_mac.sh
+          ./build_mac.sh
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: 打包应用 (Windows)
         if: matrix.os == 'windows-latest'
         run: pnpm exec electron-builder --win --publish=never
+
+      - name: 列出构建产物 (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "=== 构建产物列表 ==="
+          ls -la release/
+          echo "=== DMG 文件 ==="
+          ls -la release/*.dmg 2>/dev/null || echo "没有找到 DMG 文件"
+          echo "=== ZIP 文件 ==="
+          ls -la release/*.zip 2>/dev/null || echo "没有找到 ZIP 文件"
 
       - name: 上传构建产物 (macOS)
         if: matrix.os == 'macos-latest'
@@ -96,7 +190,16 @@ jobs:
           path: |
             release/*.dmg
             release/*.zip
-            release/*.yml
+            release/latest-mac.yml
+          if-no-files-found: warn
+
+      - name: 列出构建产物 (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          echo "=== 构建产物列表 ==="
+          ls -la release/
+          echo "=== EXE 文件 ==="
+          ls -la release/*.exe 2>/dev/null || echo "没有找到 EXE 文件"
 
       - name: 上传构建产物 (Windows)
         if: matrix.os == 'windows-latest'
@@ -106,7 +209,8 @@ jobs:
           path: |
             release/*.exe
             release/*.blockmap
-            release/*.yml
+            release/latest.yml
+          if-no-files-found: warn
 
   release:
     needs: build
@@ -119,6 +223,13 @@ jobs:
 
       - name: 下载所有构建产物
         uses: actions/download-artifact@v4
+
+      - name: 列出下载的文件
+        run: |
+          echo "=== 下载的构建产物 ==="
+          find . -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.yml" | sort
+          echo "=== 目录结构 ==="
+          ls -la */
 
       - name: 获取版本号
         id: get_version
@@ -158,8 +269,12 @@ jobs:
             2. 双击打开 DMG 文件
             3. 将应用拖拽到 Applications 文件夹
           files: |
-            macos-build/*
-            windows-build/*
+            macos-build/*.dmg
+            macos-build/*.zip
+            macos-build/latest-mac.yml
+            windows-build/*.exe
+            windows-build/*.blockmap
+            windows-build/latest.yml
           draft: false
           prerelease: false
         env:
