@@ -50,9 +50,39 @@ jobs:
       - name: 构建应用
         run: pnpm build
 
+      - name: 清理可能的磁盘挂载 (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # 清理可能存在的磁盘挂载
+          sudo diskutil list
+          # 尝试卸载任何可能挂载的磁盘
+          for disk in $(diskutil list | grep "/dev/disk" | awk '{print $1}' | grep -E "disk[0-9]+$"); do
+            sudo diskutil unmountDisk $disk 2>/dev/null || true
+          done
+        continue-on-error: true
+
       - name: 打包应用 (macOS)
         if: matrix.os == 'macos-latest'
-        run: pnpm exec electron-builder --mac --publish=never
+        run: |
+          # 设置重试逻辑
+          for i in {1..3}; do
+            echo "尝试构建 DMG (第 $i 次)"
+            if pnpm exec electron-builder --mac --publish=never; then
+              echo "构建成功"
+              break
+            else
+              echo "构建失败，等待 10 秒后重试..."
+              sleep 10
+              # 清理可能的临时文件
+              sudo rm -rf /tmp/dmg-* 2>/dev/null || true
+              if [ $i -eq 3 ]; then
+                echo "所有重试都失败了"
+                exit 1
+              fi
+            fi
+          done
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: 打包应用 (Windows)
         if: matrix.os == 'windows-latest'

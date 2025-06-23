@@ -81,13 +81,6 @@
       "category": "public.app-category.productivity",
       "target": [
         {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
           "target": "zip",
           "arch": [
             "x64",
@@ -125,24 +118,8 @@
     },
     "dmg": {
       "title": "智能文件管理器",
-      "backgroundColor": "#ffffff",
-      "window": {
-        "width": 540,
-        "height": 380
-      },
-      "contents": [
-        {
-          "x": 410,
-          "y": 190,
-          "type": "link",
-          "path": "/Applications"
-        },
-        {
-          "x": 130,
-          "y": 190,
-          "type": "file"
-        }
-      ]
+      "format": "UDZO",
+      "writeUpdateInfo": false
     }
   }
 }
