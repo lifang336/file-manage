@@ -55,7 +55,7 @@
   "build": {
     "appId": "com.metron.file-manage",
     "productName": "智能文件管理器",
-    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "artifactName": "FileManager-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -109,7 +109,7 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "${productName}-${version}.${ext}"
+      "artifactName": "FileManager-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -117,13 +117,13 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "智能文件管理器",
-      "artifactName": "${productName} Setup ${version}.${ext}"
+      "artifactName": "FileManager-Setup-${version}.${ext}"
     },
     "dmg": {
       "title": "智能文件管理器",
       "format": "UDZO",
       "writeUpdateInfo": false,
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "FileManager-${version}-${arch}.${ext}",
       "window": {
         "width": 540,
         "height": 380
