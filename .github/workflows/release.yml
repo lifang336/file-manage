@@ -49,15 +49,11 @@ jobs:
 
       - name: 打包应用 (macOS)
         if: matrix.os == 'macos-latest'
-        run: pnpm dist:mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec electron-builder --mac --publish=never
 
       - name: 打包应用 (Windows)
         if: matrix.os == 'windows-latest'
-        run: pnpm dist:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec electron-builder --win --publish=never
 
       - name: 上传构建产物 (macOS)
         if: matrix.os == 'macos-latest'
