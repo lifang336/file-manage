@@ -55,6 +55,7 @@
   "build": {
     "appId": "com.metron.file-manage",
     "productName": "智能文件管理器",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -107,14 +108,16 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "artifactName": "${productName}-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "智能文件管理器"
+      "shortcutName": "智能文件管理器",
+      "artifactName": "${productName} Setup ${version}.${ext}"
     },
     "dmg": {
       "title": "智能文件管理器",
